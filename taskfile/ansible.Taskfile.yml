@@ -1,10 +1,11 @@
 # ==============================================================================
 # File: taskfile/ansible.Taskfile.yml
 # Purpose:
-#   Ansible entrypoints for local bootstrap and future host configuration.
+#   Ansible entrypoints for local bootstrap, collection management, and host configuration.
 # Notes:
 #   - Task remains the operator entrypoint.
-#   - Ansible is used for repeatable package and host configuration where practical.
+#   - Ansible is installed through pipx so the repo is not tied to older OS packages.
+#   - Repository collections are installed from ansible/collections/requirements.yml.
 # ==============================================================================
 
 version: '3'
@@ -16,43 +17,295 @@ tasks:
     desc: Show Ansible tasks
     cmds:
       - |
-        cat <<'EOF'
+        cat <<'EOF_HELP'
         Ansible tasks:
+          task ansible:python3
+          task ansible:pipx
+          task ansible:ansible
+          task ansible:collections
+          task ansible:inventory:ensure
           task ansible:bootstrap-local
           task ansible:ping
           task ansible:syntax
-        EOF
+        EOF_HELP
 
-  bootstrap-local:
-    desc: Install local workstation/server bootstrap packages through Ansible where available
+  python3:
+    desc: Install Python 3 runtime and packaging prerequisites for pipx
     cmds:
       - |
-        set -eu
-        if ! command -v ansible-playbook >/dev/null 2>&1; then
-          if command -v apt-get >/dev/null 2>&1; then
-            if [ "$(id -u)" -eq 0 ]; then
-              apt-get update -y
-              apt-get install -y --no-install-recommends ansible
-            elif command -v sudo >/dev/null 2>&1; then
-              sudo apt-get update -y
-              sudo apt-get install -y --no-install-recommends ansible
-            else
-              echo 'ansible-playbook is missing and sudo is unavailable.' >&2
-              exit 1
-            fi
+        set -euo pipefail
+
+        if command -v apt-get >/dev/null 2>&1; then
+          if [ "$(id -u)" -eq 0 ]; then
+            apt-get update -y
+            apt-get install -y --no-install-recommends python3 python3-venv python3-pip
+          elif command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y --no-install-recommends python3 python3-venv python3-pip
           else
-            echo 'ansible-playbook is missing and this system does not use apt-get.' >&2
+            echo 'python3 prerequisites are missing and sudo is unavailable.' >&2
             exit 1
           fi
+        else
+          echo 'This task currently supports apt-get based systems only.' >&2
+          exit 1
         fi
-        ansible-playbook -i '{{.ANSIBLE_INVENTORY_FILE}}' '{{.ROOT_DIR}}/ansible/playbooks/local_bootstrap.yml'
+    status:
+      - command -v python3 >/dev/null 2>&1
+      - python3 -m venv --help >/dev/null 2>&1
+
+  pipx:
+    desc: Install pipx and ensure the current user path is updated
+    cmds:
+      - task: python3
+      - |
+        set -euo pipefail
+
+        if command -v apt-get >/dev/null 2>&1; then
+          if [ "$(id -u)" -eq 0 ]; then
+            apt-get update -y
+            apt-get install -y --no-install-recommends pipx
+          elif command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y --no-install-recommends pipx
+          else
+            echo 'pipx is missing and sudo is unavailable.' >&2
+            exit 1
+          fi
+        else
+          echo 'This task currently supports apt-get based systems only.' >&2
+          exit 1
+        fi
+
+        pipx ensurepath || true
+        python3 -m pipx ensurepath || true
+    status:
+      - command -v pipx >/dev/null 2>&1
+
+  ansible:
+    desc: Install or upgrade Ansible in an isolated pipx environment
+    cmds:
+      - task: pipx
+      - |
+        set -euo pipefail
+
+        current_user="${SUDO_USER:-${USER:-$(id -un)}}"
+        current_home="$(getent passwd "${current_user}" | cut -d: -f6)"
+        if [ -z "${current_home}" ]; then
+          current_home="${HOME}"
+        fi
+
+        user_local_bin="${current_home}/.local/bin"
+        profile_file="${current_home}/.profile"
+        path_line='export PATH="$HOME/.local/bin:$PATH"'
+
+        export PATH="${user_local_bin}:${PATH}"
+
+        if pipx list --short 2>/dev/null | grep -qx 'ansible'; then
+          echo 'Ansible is already installed in pipx.'
+          pipx upgrade ansible || true
+        else
+          pipx install --include-deps ansible
+        fi
+
+        if ! pipx list --include-injected 2>/dev/null | grep -q 'argcomplete'; then
+          pipx inject --include-apps ansible argcomplete
+        fi
+
+        install -d -m 0755 "${user_local_bin}"
+        touch "${profile_file}"
+
+        if ! grep -Fqx "${path_line}" "${profile_file}"; then
+          printf '%s\n' "${path_line}" >> "${profile_file}"
+          echo "Added ~/.local/bin PATH export to ${profile_file} for ${current_user}."
+        else
+          echo "PATH export already present in ${profile_file} for ${current_user}."
+        fi
+
+        if command -v ansible >/dev/null 2>&1; then
+          ansible --version | head -n 1
+        elif [ -x "${user_local_bin}/ansible" ]; then
+          "${user_local_bin}/ansible" --version | head -n 1
+        else
+          echo 'WARNING: Ansible is installed via pipx, but the ansible shim is not on PATH.' >&2
+          echo "Open a new shell or source ${profile_file} to pick up ~/.local/bin." >&2
+          exit 1
+        fi
+    status:
+      - |
+        set -euo pipefail
+        current_user="${SUDO_USER:-${USER:-$(id -un)}}"
+        current_home="$(getent passwd "${current_user}" | cut -d: -f6)"
+        if [ -z "${current_home}" ]; then
+          current_home="${HOME}"
+        fi
+        profile_file="${current_home}/.profile"
+        path_line='export PATH="$HOME/.local/bin:$PATH"'
+        pipx list --short 2>/dev/null | grep -qx 'ansible' && grep -Fqx "${path_line}" "${profile_file}"
+
+  collections:
+    desc: Install or upgrade repository Ansible collections
+    deps:
+      - ansible
+    cmds:
+      - |
+        # ================================================================
+        # Task: ansible:collections
+        # Purpose:
+        #   Install the external Ansible collections required by this
+        #   repository from ansible/collections/requirements.yml.
+        # ================================================================
+        set -euo pipefail
+
+        ansible_galaxy_cmd=''
+
+        if command -v ansible-galaxy >/dev/null 2>&1; then
+          ansible_galaxy_cmd="$(command -v ansible-galaxy)"
+        elif [ -x "${HOME}/.local/bin/ansible-galaxy" ]; then
+          ansible_galaxy_cmd="${HOME}/.local/bin/ansible-galaxy"
+        elif [ -x "${HOME}/.local/share/pipx/venvs/ansible/bin/ansible-galaxy" ]; then
+          ansible_galaxy_cmd="${HOME}/.local/share/pipx/venvs/ansible/bin/ansible-galaxy"
+        else
+          echo 'ansible-galaxy was not found. Run task ansible:ansible first.' >&2
+          exit 1
+        fi
+
+        "${ansible_galaxy_cmd}" collection install -r '{{.ROOT_DIR}}/ansible/collections/requirements.yml' --force
+
+  bootstrap-local:
+    desc: Install local Ansible tooling and repository collections
+    cmds:
+      - task: collections
+      - task: inventory:ensure
+
+  inventory:ensure:
+    desc: Reconcile the local Ansible inventory from known repository configuration
+    deps:
+      - :dirs:ensure
+    cmds:
+      - |
+        # ================================================================
+        # Task: ansible:inventory:ensure
+        # Purpose:
+        #   Keep state/ansible/inventory.yml valid and aligned with the
+        #   known Proxmox SSH connection values captured during bootstrap.
+        # Notes:
+        #   - The inventory is runtime state and is intentionally ignored
+        #     by git.
+        #   - A previously malformed inventory is replaced rather than
+        #     reused, because Ansible must be able to parse this file.
+        # ================================================================
+        set -eu
+        . '{{.TASK_HELPERS_FILE}}'
+
+        inventory_file='{{.ANSIBLE_INVENTORY_FILE}}'
+        config_env_file='{{.CONFIG_ENV_FILE}}'
+        ssh_private_key='{{.SSH_PRIVATE_KEY}}'
+
+        ensure_parent_dir "$inventory_file"
+
+        proxmox_ssh_host='{{.PROXMOX_SSH_HOST | default ""}}'
+        proxmox_ssh_port='{{.PROXMOX_SSH_PORT | default ""}}'
+        proxmox_ssh_user='{{.PROXMOX_SSH_USER | default ""}}'
+
+        if [ -z "$proxmox_ssh_host" ] && [ -f "$config_env_file" ]; then
+          proxmox_ssh_host="$(get_env_value "$config_env_file" PROXMOX_SSH_HOST || true)"
+        fi
+        if [ -z "$proxmox_ssh_port" ] && [ -f "$config_env_file" ]; then
+          proxmox_ssh_port="$(get_env_value "$config_env_file" PROXMOX_SSH_PORT || true)"
+        fi
+        if [ -z "$proxmox_ssh_user" ] && [ -f "$config_env_file" ]; then
+          proxmox_ssh_user="$(get_env_value "$config_env_file" PROXMOX_SSH_USER || true)"
+        fi
+
+        if [ -z "$proxmox_ssh_port" ]; then
+          proxmox_ssh_port='22'
+        fi
+        if [ -z "$proxmox_ssh_user" ]; then
+          proxmox_ssh_user='root'
+        fi
+
+        tmp_inventory_file="$(mktemp)"
+        trap 'rm -f "$tmp_inventory_file"' EXIT
+
+        if [ -n "$proxmox_ssh_host" ]; then
+          cat > "$tmp_inventory_file" <<EOF_INVENTORY
+        ---
+        # ==============================================================================
+        # File: state/ansible/inventory.yml
+        # Purpose:
+        #   Local runtime Ansible inventory generated from state/config/.env.
+        # Notes:
+        #   - This file is ignored by git and may be safely regenerated.
+        # ==============================================================================
+
+        all:
+          hosts:
+            localhost:
+              ansible_connection: local
+          children:
+            proxmox:
+              hosts:
+                proxmox:
+                  ansible_host: $proxmox_ssh_host
+                  ansible_user: $proxmox_ssh_user
+                  ansible_port: $proxmox_ssh_port
+                  ansible_ssh_private_key_file: $ssh_private_key
+            managed:
+              hosts: {}
+            mikrotik:
+              hosts: {}
+            lxc:
+              hosts: {}
+            vm:
+              hosts: {}
+        EOF_INVENTORY
+        else
+          cat > "$tmp_inventory_file" <<'EOF_INVENTORY'
+        ---
+        # ==============================================================================
+        # File: state/ansible/inventory.yml
+        # Purpose:
+        #   Local runtime Ansible inventory generated from repository defaults.
+        # Notes:
+        #   - Add Proxmox connection details with task ssh:bootstrap or by setting
+        #     PROXMOX_SSH_HOST in state/config/.env.
+        # ==============================================================================
+
+        all:
+          hosts:
+            localhost:
+              ansible_connection: local
+          children:
+            proxmox:
+              hosts: {}
+            managed:
+              hosts: {}
+            mikrotik:
+              hosts: {}
+            lxc:
+              hosts: {}
+            vm:
+              hosts: {}
+        EOF_INVENTORY
+        fi
+
+        cat "$tmp_inventory_file" > "$inventory_file"
+        chmod 600 "$inventory_file" 2>/dev/null || true
+        echo "Reconciled $inventory_file"
 
   ping:
     desc: Ping inventory hosts
+    deps:
+      - ansible
+      - inventory:ensure
     cmds:
       - ansible all -i '{{.ANSIBLE_INVENTORY_FILE}}' -m ping
 
   syntax:
     desc: Run Ansible syntax checks
+    deps:
+      - ansible
+      - inventory:ensure
     cmds:
       - ansible-playbook -i '{{.ANSIBLE_INVENTORY_FILE}}' '{{.ROOT_DIR}}/ansible/playbooks/local_bootstrap.yml' --syntax-check

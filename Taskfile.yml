@@ -27,6 +27,7 @@ vars:
   BACKUP_DIR: '{{.ROOT_DIR}}/state/backups'
   DR_DIR: '{{.ROOT_DIR}}/state/dr'
   AUDIT_DIR: '{{.ROOT_DIR}}/state/audit'
+  MIKROTIK_DIR: '{{.ROOT_DIR}}/state/mikrotik'
   AGE_DIR: '{{.SECRETS_DIR}}/age'
   AGE_ARCHIVE_DIR: '{{.AGE_DIR}}/archive'
   AGE_KEYS_FILE: '{{.AGE_DIR}}/keys.txt'
@@ -179,10 +180,12 @@ tasks:
           '{{.BACKUP_DIR}}' \
           '{{.DR_DIR}}' \
           '{{.AUDIT_DIR}}' \
+          '{{.MIKROTIK_DIR}}' \
           '{{.AGE_DIR}}' \
           '{{.AGE_ARCHIVE_DIR}}' \
           '{{.ROOT_DIR}}/state/ansible' \
           '{{.ROOT_DIR}}/state/terraform' \
+          '{{.ROOT_DIR}}/ansible/collections' \
           '{{.ROOT_DIR}}/docs' \
           '{{.ROOT_DIR}}/ansible/playbooks' \
           '{{.ROOT_DIR}}/ansible/roles' \

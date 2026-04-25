@@ -18,6 +18,7 @@ state/tmp/
 state/backups/
 state/dr/
 state/audit/
+state/mikrotik/
 state/terraform/*.tfstate
 state/terraform/*.tfstate.*
 state/ansible/inventory.yml

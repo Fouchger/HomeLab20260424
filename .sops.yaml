@@ -1,9 +1,0 @@
-# ================================================================
-# File: .sops.yaml
-# Purpose:
-#   SOPS creation rules for secrets stored under state/secrets.
-# ================================================================
-creation_rules:
-  - path_regex: ^(.*/)?state/secrets/.*\.(ya?ml|json|env|ini|txt|conf)$
-    age: >-
-      age1qg6lc8v2je5yzhql5f2sj9zyc3vaw6a7aqfa6gja4yak9t4gpegsh7j3q6,age133r7s02x7aeq7hx5tjvtz5str4qnt4cmujmfcsa4d83ta00ej5zsy5303x

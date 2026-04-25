@@ -14,6 +14,8 @@ all:
   children:
     proxmox:
       hosts: {}
+    mikrotik:
+      hosts: {}
     lxc:
       hosts: {}
     vm:
