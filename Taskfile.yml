@@ -357,3 +357,23 @@ tasks:
           PASSWORDS_FILE:  {{.SECRETS_DIR}}/passwords.env
           INVENTORY_FILE:  {{.ANSIBLE_INVENTORY_FILE}}
         EOF
+
+  day1:
+    desc: task to run all day1 tasks
+    cmds:
+      - |
+        ./install.sh
+      - task: doctor
+      - task: bootstrap
+      - task: config:init
+      - task: secrets:design
+      - task: secrets:prepare
+      - task: secrets:bootstrap
+      - task: secrets:report
+      - task: ssh:bootstrap
+      - task: git_gh:bootstrap
+      - task: proxmox:bootstrap
+      - task: validate
+      - task: ansible:syntax 
+      - task: ansible:ping
+      

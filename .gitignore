@@ -14,6 +14,7 @@ state/secrets/passwords/*.env
 !state/secrets/passwords.env.example
 
 # Generated state
+state/
 state/tmp/
 state/backups/
 state/dr/
@@ -24,6 +25,10 @@ state/terraform/*.tfstate.*
 state/ansible/inventory.yml
 state/secrets/age/*.key
 state/secrets/openbao/
+state/secrets/age/admin.pub
+state/secrets/age/keys.txt
+state/secrets/age/recovery.pub
+state/secrets/sops/examples/bootstrap.enc.yaml
 
 # Terraform
 .terraform/
@@ -53,3 +58,5 @@ packer_cache/
 *.log
 *.out
 coverage.*
+
+.sops.yaml

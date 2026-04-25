@@ -1,0 +1,49 @@
+---
+# ==============================================================================
+# File: ansible/playbooks/openbao_trust_ca.yml
+# Purpose:
+#   Install the local OpenBao certificate authority into the trusted OS CA store.
+# Notes:
+#   - Debian/Ubuntu oriented.
+#   - Run after the OpenBao CA has been generated.
+# ==============================================================================
+
+- name: Trust the local OpenBao certificate authority
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+
+  vars:
+    openbao_ca_source: "{{ lookup('env', 'OPENBAO_CA_SOURCE') | default(playbook_dir + '/../../state/secrets/certificates/openbao/tls/ca/ca.cert.pem', true) }}"
+    openbao_ca_target: /usr/local/share/ca-certificates/homelab-openbao-ca.crt
+
+  tasks:
+    - name: Fail clearly for unsupported operating systems
+      ansible.builtin.fail:
+        msg: "OpenBao CA trust installation currently supports Debian/Ubuntu only."
+      when: ansible_facts.os_family != 'Debian'
+
+    - name: Check OpenBao CA source exists
+      ansible.builtin.stat:
+        path: "{{ openbao_ca_source }}"
+      register: openbao_ca_source_stat
+
+    - name: Fail when OpenBao CA has not been generated
+      ansible.builtin.fail:
+        msg: "OpenBao CA file was not found. Run task secrets:openbao:tls:ca:init first."
+      when: not openbao_ca_source_stat.stat.exists
+
+    - name: Install OpenBao CA into the OS trust store
+      ansible.builtin.copy:
+        src: "{{ openbao_ca_source }}"
+        dest: "{{ openbao_ca_target }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Update CA certificates
+
+  handlers:
+    - name: Update CA certificates
+      ansible.builtin.command: update-ca-certificates
+      changed_when: true
