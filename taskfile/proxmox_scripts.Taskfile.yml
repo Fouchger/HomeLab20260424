@@ -1,0 +1,76 @@
+# ================================================================
+# File: taskfile/proxmox_scripts.Taskfile.yml
+# Purpose:
+#   Run Proxmox helper scripts that install or configure add-ons on
+#   the homelab Proxmox host.
+#
+# Notes:
+#   - Uses the root Taskfile variables and helper script locations.
+#   - Installer tasks run on the local server where Task is executed.
+# ================================================================
+
+version: '3'
+
+silent: true
+
+tasks:
+  code-server:install:
+    desc: Install Coder code-server on the current Proxmox server using latest upstream or fixed local helper script
+    cmds:
+      - |
+        # ================================================================
+        # Task: code-server:install
+        # Purpose:
+        #   Install Coder code-server on the server where this repository
+        #   and Task command are being run. Run this task directly on the
+        #   target Proxmox host, not from a workstation over SSH.
+        # ================================================================
+        set -eu
+        . '{{.TASK_HELPERS_FILE}}'
+
+        require_command awk
+        require_command sed
+
+        helper_script='{{.ROOT_DIR}}/services/proxmox_helper_scripts/coder-code-server.sh'
+
+        [ -f "$helper_script" ] || {
+          echo "Required helper script not found: $helper_script" >&2
+          exit 1
+        }
+
+        fixed_version="$(awk -F= '/^VERSION=/{print $2; exit}' "$helper_script" | sed "s/[\"']//g")"
+        if [ -z "$fixed_version" ]; then
+          echo "Unable to determine VERSION from $helper_script" >&2
+          exit 1
+        fi
+
+        cat <<EOF
+        Coder code-server install options
+        ---------------------------------
+        1. latest  - Run the latest upstream Proxmox helper script from GitHub
+        2. fixed   - Run the local pinned helper script version ${fixed_version}
+
+        Target: local server running this Taskfile
+        EOF
+
+        printf 'Install latest or fixed version? [fixed]: '
+        read -r install_choice
+        install_choice="${install_choice:-fixed}"
+
+        case "$install_choice" in
+          latest|Latest|LATEST|l|L|1)
+            require_command curl
+            echo 'Installing latest code-server using the upstream community script on this server.'
+            bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coder-code-server.sh)"
+            ;;
+          fixed|Fixed|FIXED|f|F|2)
+            echo "Installing fixed code-server version ${fixed_version} using the local helper script on this server."
+            chmod 700 "$helper_script"
+            bash "$helper_script"
+            ;;
+          *)
+            echo "Invalid choice: $install_choice" >&2
+            echo 'Use latest or fixed.' >&2
+            exit 1
+            ;;
+        esac

@@ -56,6 +56,7 @@ includes:
   ssh: ./taskfile/ssh.Taskfile.yml
   terraform: ./taskfile/terraform.Taskfile.yml
   traefik: ./taskfile/traefik.Taskfile.yml
+  proxmox_scripts: ./taskfile/proxmox_scripts.Taskfile.yml
 
 tasks:
   default:
@@ -80,6 +81,9 @@ tasks:
 
         0. Install or update the repository
             ./install.sh            → Clones or updates the repo and prepares the local environment
+
+        0.1. Install Code-Server
+            task proxmox_scripts:code-server:install → Install Coder code-server on admin01 using latest upstream or fixed local helper script
 
         1. View available commands
             task help               → Displays this guide and available workflows
@@ -345,6 +349,7 @@ tasks:
     cmds:
       - |
         bash ./install.sh
+      - task: proxmox_scripts:code-server:install
       - task: doctor
       - task: bootstrap
       - task: config:init
