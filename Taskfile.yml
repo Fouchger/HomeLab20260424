@@ -205,31 +205,6 @@ tasks:
           '{{.ROOT_DIR}}/tools'
         chmod 700 '{{.SECRETS_DIR}}' '{{.PASSWORDS_DIR}}' '{{.AGE_DIR}}' '{{.AGE_ARCHIVE_DIR}}' 2>/dev/null || true
 
-  # config:init:
-  #   desc: Create local config files if missing without overwriting existing values
-  #   deps: [dirs:ensure]
-  #   cmds:
-  #     - |
-  #       set -eu
-  #       . '{{.TASK_HELPERS_FILE}}'
-
-  #       if [ ! -f '{{.CONFIG_ENV_FILE}}' ]; then
-  #         install -m 0600 /dev/null '{{.CONFIG_ENV_FILE}}'
-  #       fi
-
-  #       ensure_env_key_value '{{.CONFIG_ENV_FILE}}' ROOT_DIR '{{.ROOT_DIR}}'
-  #       ensure_env_key_value '{{.CONFIG_ENV_FILE}}' GITHUB_REPO "${GITHUB_REPO:-Fouchger/HomeLab20260424}"
-  #       ensure_env_key_value '{{.CONFIG_ENV_FILE}}' GITHUB_BRANCH "${GITHUB_BRANCH:-main}"
-  #       ensure_env_key_value '{{.CONFIG_ENV_FILE}}' SETUP "${SETUP:-prod}"
-  #       ensure_env_key_value '{{.CONFIG_ENV_FILE}}' NONINTERACTIVE "${NONINTERACTIVE:-0}"
-
-  #       if [ ! -f '{{.SECRETS_DIR}}/passwords.env' ]; then
-  #         install -m 0600 /dev/null '{{.SECRETS_DIR}}/passwords.env'
-  #       fi
-
-  #       if [ ! -f '{{.ANSIBLE_INVENTORY_FILE}}' ]; then
-  #         cp '{{.ROOT_DIR}}/templates/inventory.yml.tpl' '{{.ANSIBLE_INVENTORY_FILE}}'
-  #       fi
   config:init:
     desc: Initialise reusable non-secret configuration
     cmds:
@@ -292,9 +267,14 @@ tasks:
 
         if [ ! -f "${INVENTORY_FILE}" ]; then
           cat > "${INVENTORY_FILE}" <<'EOINV'
+        ---
         all:
+          hosts:
+            localhost:
+              ansible_connection: local
+              ansible_python_interpreter: /usr/bin/python3
           children:
-            proxmox:
+            proxmox_hosts:
               hosts: {}
             managed:
               hosts: {}

@@ -27,9 +27,12 @@ tasks:
           task ansible:bootstrap-local
           task ansible:ping
           task ansible:syntax
+
+        Internal helper tasks are hidden from normal task listings.
         EOF_HELP
 
   python3:
+    internal: true
     desc: Install Python 3 runtime and packaging prerequisites for pipx
     cmds:
       - |
@@ -55,6 +58,7 @@ tasks:
       - python3 -m venv --help >/dev/null 2>&1
 
   pipx:
+    internal: true
     desc: Install pipx and ensure the current user path is updated
     cmds:
       - task: python3
@@ -83,6 +87,7 @@ tasks:
       - command -v pipx >/dev/null 2>&1
 
   ansible:
+    internal: true
     desc: Install or upgrade Ansible in an isolated pipx environment
     cmds:
       - task: pipx
@@ -146,6 +151,7 @@ tasks:
         pipx list --short 2>/dev/null | grep -qx 'ansible' && grep -Fqx "${path_line}" "${profile_file}"
 
   collections:
+    internal: true
     desc: Install or upgrade repository Ansible collections
     deps:
       - ansible
@@ -245,14 +251,16 @@ tasks:
           hosts:
             localhost:
               ansible_connection: local
+              ansible_python_interpreter: /usr/bin/python3
           children:
-            proxmox:
+            proxmox_hosts:
               hosts:
-                proxmox:
+                pve01:
                   ansible_host: $proxmox_ssh_host
                   ansible_user: $proxmox_ssh_user
                   ansible_port: $proxmox_ssh_port
                   ansible_ssh_private_key_file: $ssh_private_key
+                  ansible_python_interpreter: /usr/bin/python3
             managed:
               hosts: {}
             mikrotik:
@@ -278,8 +286,9 @@ tasks:
           hosts:
             localhost:
               ansible_connection: local
+              ansible_python_interpreter: /usr/bin/python3
           children:
-            proxmox:
+            proxmox_hosts:
               hosts: {}
             managed:
               hosts: {}
