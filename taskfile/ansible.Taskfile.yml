@@ -1,0 +1,58 @@
+# ==============================================================================
+# File: taskfile/ansible.Taskfile.yml
+# Purpose:
+#   Ansible entrypoints for local bootstrap and future host configuration.
+# Notes:
+#   - Task remains the operator entrypoint.
+#   - Ansible is used for repeatable package and host configuration where practical.
+# ==============================================================================
+
+version: '3'
+
+silent: true
+
+tasks:
+  help:
+    desc: Show Ansible tasks
+    cmds:
+      - |
+        cat <<'EOF'
+        Ansible tasks:
+          task ansible:bootstrap-local
+          task ansible:ping
+          task ansible:syntax
+        EOF
+
+  bootstrap-local:
+    desc: Install local workstation/server bootstrap packages through Ansible where available
+    cmds:
+      - |
+        set -eu
+        if ! command -v ansible-playbook >/dev/null 2>&1; then
+          if command -v apt-get >/dev/null 2>&1; then
+            if [ "$(id -u)" -eq 0 ]; then
+              apt-get update -y
+              apt-get install -y --no-install-recommends ansible
+            elif command -v sudo >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y --no-install-recommends ansible
+            else
+              echo 'ansible-playbook is missing and sudo is unavailable.' >&2
+              exit 1
+            fi
+          else
+            echo 'ansible-playbook is missing and this system does not use apt-get.' >&2
+            exit 1
+          fi
+        fi
+        ansible-playbook -i '{{.ANSIBLE_INVENTORY_FILE}}' '{{.ROOT_DIR}}/ansible/playbooks/local_bootstrap.yml'
+
+  ping:
+    desc: Ping inventory hosts
+    cmds:
+      - ansible all -i '{{.ANSIBLE_INVENTORY_FILE}}' -m ping
+
+  syntax:
+    desc: Run Ansible syntax checks
+    cmds:
+      - ansible-playbook -i '{{.ANSIBLE_INVENTORY_FILE}}' '{{.ROOT_DIR}}/ansible/playbooks/local_bootstrap.yml' --syntax-check

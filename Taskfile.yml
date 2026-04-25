@@ -1,0 +1,356 @@
+# ==============================================================================
+# File: Taskfile.yml
+# Purpose:
+#   Root Task entry point and control plane for the homelab repository.
+# Notes:
+#   - install.sh downloads or updates the repository only.
+#   - Taskfile.yml is the operational entrypoint after installation.
+#   - Shared variables are defined once here and reused by child Taskfiles.
+# ==============================================================================
+
+version: '3'
+
+silent: true
+
+dotenv:
+  - state/config/.env
+  - state/secrets/passwords.env
+
+vars:
+  ROOT_DIR:
+    sh: pwd
+  CONFIG_DIR: '{{.ROOT_DIR}}/state/config'
+  CONFIG_ENV_FILE: '{{.CONFIG_DIR}}/.env'
+  SECRETS_DIR: '{{.ROOT_DIR}}/state/secrets'
+  PASSWORDS_DIR: '{{.SECRETS_DIR}}/passwords'
+  TMP_DIR: '{{.ROOT_DIR}}/state/tmp'
+  BACKUP_DIR: '{{.ROOT_DIR}}/state/backups'
+  DR_DIR: '{{.ROOT_DIR}}/state/dr'
+  AUDIT_DIR: '{{.ROOT_DIR}}/state/audit'
+  AGE_DIR: '{{.SECRETS_DIR}}/age'
+  AGE_ARCHIVE_DIR: '{{.AGE_DIR}}/archive'
+  AGE_KEYS_FILE: '{{.AGE_DIR}}/keys.txt'
+  PASSWORDS_ENC_ENV_FILE: '{{.PASSWORDS_DIR}}/passwords.enc.env'
+  PASSWORDS_ENC_ENV_FILE_REL: 'state/secrets/passwords/passwords.enc.env'
+  TASK_HELPERS_FILE: '{{.ROOT_DIR}}/scripts/lib/task-env.sh'
+  SSH_KEY_DIR: '{{.HOME}}/.ssh'
+  SSH_KNOWN_HOSTS_FILE: '{{.SSH_KEY_DIR}}/known_hosts'
+  KEY_NAME: '{{.KEY_NAME | default "homelab_ed25519"}}'
+  ANSIBLE_INVENTORY_FILE: '{{.ROOT_DIR}}/state/ansible/inventory.yml'
+  SSH_PRIVATE_KEY: '{{.HOME}}/.ssh/homelab_ed25519'
+  SSH_PUBLIC_KEY: '{{.HOME}}/.ssh/homelab_ed25519.pub'
+
+
+includes:
+  ansible: ./taskfile/ansible.Taskfile.yml
+  cloudflare: ./taskfile/cloudflare.Taskfile.yml
+  dns: ./taskfile/dns.Taskfile.yml
+  git_gh: ./taskfile/git_gh.Taskfile.yml
+  network: ./taskfile/network.Taskfile.yml
+  packer: ./taskfile/packer.Taskfile.yml
+  plex: ./taskfile/plex.Taskfile.yml
+  proxmox: ./taskfile/proxmox.Taskfile.yml
+  router: ./taskfile/router.Taskfile.yml
+  secrets: ./taskfile/secrets.Taskfile.yml
+  ssh: ./taskfile/ssh.Taskfile.yml
+  terraform: ./taskfile/terraform.Taskfile.yml
+  traefik: ./taskfile/traefik.Taskfile.yml
+
+tasks:
+  default:
+    desc: Show available homelab tasks
+    cmds:
+      - task: help
+
+  help:
+    desc: Show the production execution sequence and available task groups
+    cmds:
+      - |
+        cat <<'EOHELP'
+        HomeLab20260424 execution flow
+
+        The repo is operated through Task after install.sh has cloned or updated it.
+        Run tasks from the repository root. Existing values in state/config/.env
+        and state/secrets/passwords.env are reused on rerun.
+
+        ──────────────────────────────────────────────────────────────
+        Day 1 – Initial implementation (run in order)
+        ──────────────────────────────────────────────────────────────
+
+        0. Install or update the repository
+            ./install.sh            → Clones or updates the repo and prepares the local environment
+
+        1. View available commands
+            task help               → Displays this guide and available workflows
+
+        2. Check prerequisites and environment readiness
+            task doctor             → Validates OS, required tools, and config/secrets presence
+
+        3. Bootstrap local environment
+            task bootstrap          → Creates state folders, initial config, installs Ansible, fixes permissions
+
+        4. Initialise configuration (non-secret values)
+            task config:init        → Create State folder and subfolders
+                                    → Prompts once for required config and stores in state/config/.env
+
+        5. Initialise and store secrets
+            task secrets:design     → Defines required secrets structure
+            task secrets:prepare    → Creates local secret storage files
+            task secrets:bootstrap  → Prompts once for secrets and stores securely
+            task secrets:report     → Shows secret status (without exposing values)
+
+        6. Configure SSH access
+            task ssh:bootstrap      → Generates SSH keys and configures access to remote hosts (e.g. Proxmox)
+
+        7. Configure Git and GitHub access
+          task git_gh:bootstrap     → Authenticates GitHub CLI and prepares repo access
+
+        8. Configure Proxmox automation
+          task proxmox:bootstrap    → Creates automation user, API token, and discovers nodes
+
+        9. Validate repository and configuration
+            task validate           → Checks structure, shell syntax, and required files
+
+        10. Verify Ansible connectivity (after hosts exist)
+            task ansible:syntax     → Validates Ansible playbooks
+            task ansible:ping       → Confirms connectivity to managed hosts
+
+        ──────────────────────────────────────────────────────────────
+        Day-to-day operations (regular use)
+        ──────────────────────────────────────────────────────────────
+
+        task doctor                 → Re-check environment health and prerequisites
+        task validate               → Validate repo integrity and configuration correctness
+        task report                 → High-level status summary across configured domains
+        task secrets:report         → Confirm secrets are present and usable
+        task git_gh:report          → Check GitHub authentication status
+        task ssh:report             → Validate SSH keys and connectivity
+        task proxmox:report         → Confirm Proxmox API access and node visibility
+
+        ──────────────────────────────────────────────────────────────
+        Domain-specific help
+        ──────────────────────────────────────────────────────────────
+
+        task ansible:help           → Ansible playbooks, roles, and execution guidance
+        task git_gh:help            → Git and GitHub CLI setup and usage
+        task ssh:help               → SSH key management and connectivity
+        task proxmox:help           → Proxmox automation and API usage
+        task secrets:help           → Secrets management and OpenBao usage
+        task terraform:help         → Infrastructure provisioning (scaffolded)
+        task packer:help            → Image/template builds (scaffolded)
+        task network:help           → Network configuration (scaffolded)
+        task router:help            → Router automation (scaffolded)
+        task dns:help               → DNS services such as Technitium (scaffolded)
+        task traefik:help           → Reverse proxy configuration (scaffolded)
+        task cloudflare:help        → Cloudflare integration (scaffolded)
+        task plex:help              → Plex service deployment (scaffolded)
+
+        ──────────────────────────────────────────────────────────────
+        Implementation note
+        ──────────────────────────────────────────────────────────────
+
+        Active workflows:
+          - Config management
+          - Secrets/OpenBao
+          - SSH
+          - Git/GitHub
+          - Proxmox
+          - Local Ansible bootstrap
+
+        Scaffolded domains (planned expansion):
+          - Terraform
+          - Packer
+          - Network / Router
+          - DNS / Traefik / Cloudflare
+          - Plex
+
+        EOHELP
+
+  dirs:ensure:
+    desc: Ensure production repository directories exist
+    cmds:
+      - |
+        set -eu
+        mkdir -p \
+          '{{.CONFIG_DIR}}' \
+          '{{.SECRETS_DIR}}' \
+          '{{.PASSWORDS_DIR}}' \
+          '{{.TMP_DIR}}' \
+          '{{.BACKUP_DIR}}' \
+          '{{.DR_DIR}}' \
+          '{{.AUDIT_DIR}}' \
+          '{{.AGE_DIR}}' \
+          '{{.AGE_ARCHIVE_DIR}}' \
+          '{{.ROOT_DIR}}/state/ansible' \
+          '{{.ROOT_DIR}}/state/terraform' \
+          '{{.ROOT_DIR}}/docs' \
+          '{{.ROOT_DIR}}/ansible/playbooks' \
+          '{{.ROOT_DIR}}/ansible/roles' \
+          '{{.ROOT_DIR}}/ansible/group_vars' \
+          '{{.ROOT_DIR}}/ansible/host_vars' \
+          '{{.ROOT_DIR}}/terraform/modules' \
+          '{{.ROOT_DIR}}/terraform/environments/homelab' \
+          '{{.ROOT_DIR}}/terraform/providers' \
+          '{{.ROOT_DIR}}/packer/templates' \
+          '{{.ROOT_DIR}}/packer/variables' \
+          '{{.ROOT_DIR}}/services/technitium' \
+          '{{.ROOT_DIR}}/services/traefik' \
+          '{{.ROOT_DIR}}/services/cloudflare-tunnel' \
+          '{{.ROOT_DIR}}/services/plex' \
+          '{{.ROOT_DIR}}/scripts/lib' \
+          '{{.ROOT_DIR}}/templates' \
+          '{{.ROOT_DIR}}/tools'
+        chmod 700 '{{.SECRETS_DIR}}' '{{.PASSWORDS_DIR}}' '{{.AGE_DIR}}' '{{.AGE_ARCHIVE_DIR}}' 2>/dev/null || true
+
+  # config:init:
+  #   desc: Create local config files if missing without overwriting existing values
+  #   deps: [dirs:ensure]
+  #   cmds:
+  #     - |
+  #       set -eu
+  #       . '{{.TASK_HELPERS_FILE}}'
+
+  #       if [ ! -f '{{.CONFIG_ENV_FILE}}' ]; then
+  #         install -m 0600 /dev/null '{{.CONFIG_ENV_FILE}}'
+  #       fi
+
+  #       ensure_env_key_value '{{.CONFIG_ENV_FILE}}' ROOT_DIR '{{.ROOT_DIR}}'
+  #       ensure_env_key_value '{{.CONFIG_ENV_FILE}}' GITHUB_REPO "${GITHUB_REPO:-Fouchger/HomeLab20260424}"
+  #       ensure_env_key_value '{{.CONFIG_ENV_FILE}}' GITHUB_BRANCH "${GITHUB_BRANCH:-main}"
+  #       ensure_env_key_value '{{.CONFIG_ENV_FILE}}' SETUP "${SETUP:-prod}"
+  #       ensure_env_key_value '{{.CONFIG_ENV_FILE}}' NONINTERACTIVE "${NONINTERACTIVE:-0}"
+
+  #       if [ ! -f '{{.SECRETS_DIR}}/passwords.env' ]; then
+  #         install -m 0600 /dev/null '{{.SECRETS_DIR}}/passwords.env'
+  #       fi
+
+  #       if [ ! -f '{{.ANSIBLE_INVENTORY_FILE}}' ]; then
+  #         cp '{{.ROOT_DIR}}/templates/inventory.yml.tpl' '{{.ANSIBLE_INVENTORY_FILE}}'
+  #       fi
+  config:init:
+    desc: Initialise reusable non-secret configuration
+    cmds:
+      - |
+        set -euo pipefail
+
+        mkdir -p state/config state/secrets/password state/ansible state/terraform
+        
+
+        CONFIG_FILE="state/config/.env"
+        SECRETS_FILE="state/secrets/password/passwords.enc.env"
+        INVENTORY_FILE="state/ansible/inventory.yml"
+
+        touch "${CONFIG_FILE}"
+        chmod 600 "${CONFIG_FILE}"
+
+        if [ ! -f "${SECRETS_FILE}" ]; then
+          touch "${SECRETS_FILE}"
+          chmod 600 "${SECRETS_FILE}"
+        fi
+
+        ensure_config_value() {
+          key="$1"
+          prompt="$2"
+          default_value="${3:-}"
+
+          current_value="$(grep -E "^${key}=" "${CONFIG_FILE}" | tail -n 1 | cut -d= -f2- || true)"
+
+          if [ -n "${current_value}" ]; then
+            echo "Reusing ${key}=${current_value}"
+            return 0
+          fi
+
+          if [ -n "${default_value}" ]; then
+            printf "%s [%s]: " "${prompt}" "${default_value}"
+          else
+            printf "%s: " "${prompt}"
+          fi
+
+          read -r input_value
+
+          if [ -z "${input_value}" ]; then
+            input_value="${default_value}"
+          fi
+
+          if [ -z "${input_value}" ]; then
+            echo "ERROR: ${key} is required."
+            exit 1
+          fi
+
+          printf '%s=%s\n' "${key}" "${input_value}" >> "${CONFIG_FILE}"
+          echo "Saved ${key}=${input_value}"
+        }
+
+        ensure_config_value "ROOT_DIR" "Repository root directory" "$(pwd)"
+        ensure_config_value "GITHUB_REPO" "GitHub repo to clone" "Fouchger/HomeLab20260424"
+        ensure_config_value "GITHUB_BRANCH" "Git branch" "main"
+        ensure_config_value "SETUP" "Setup name" "homelab"
+        ensure_config_value "NONINTERACTIVE" "Run non-interactively true/false" "false"
+
+        if [ ! -f "${INVENTORY_FILE}" ]; then
+          cat > "${INVENTORY_FILE}" <<'EOINV'
+        all:
+          children:
+            proxmox:
+              hosts: {}
+            managed:
+              hosts: {}
+        EOINV
+          echo "Created ${INVENTORY_FILE}"
+        else
+          echo "Reusing ${INVENTORY_FILE}"
+        fi
+
+        echo
+        echo "Config initialisation complete."
+        echo "Config file: ${CONFIG_FILE}"
+        echo "Secrets file: ${SECRETS_FILE}"
+
+  bootstrap:
+    desc: Prepare local folders, config, Ansible basics and executable permissions
+    cmds:
+      - task: config:init
+      - task: ansible:bootstrap-local
+      - bash ./scripts/lib/ensure-executable-scripts.sh '{{.ROOT_DIR}}'
+      - task: report
+
+  validate:
+    desc: Validate repository structure and shell syntax
+    cmds:
+      - |
+        set -eu
+        test -f '{{.TASK_HELPERS_FILE}}'
+        test -f '{{.CONFIG_ENV_FILE}}'
+        test -f '{{.ANSIBLE_INVENTORY_FILE}}'
+        find '{{.ROOT_DIR}}' -path '{{.ROOT_DIR}}/.git' -prune -o -type f -name '*.sh' -print | while IFS= read -r script_file; do
+          bash -n "$script_file"
+        done
+        echo 'Validation complete.'
+
+  doctor:
+    desc: Report local tooling and configuration readiness
+    cmds:
+      - |
+        set -eu
+        echo 'Homelab doctor'
+        for command_name in git curl task ansible-playbook ssh ssh-keygen; do
+          if command -v "$command_name" >/dev/null 2>&1; then
+            printf '  OK   %s\n' "$command_name"
+          else
+            printf '  MISS %s\n' "$command_name"
+          fi
+        done
+        test -f '{{.CONFIG_ENV_FILE}}' && echo '  OK   state/config/.env' || echo '  MISS state/config/.env'
+        test -f '{{.SECRETS_DIR}}/passwords.env' && echo '  OK   state/secrets/passwords.env' || echo '  MISS state/secrets/passwords.env'
+
+  report:
+    desc: Show repository runtime paths
+    cmds:
+      - |
+        cat <<EOF
+        Repository report
+          ROOT_DIR:        {{.ROOT_DIR}}
+          CONFIG_ENV_FILE: {{.CONFIG_ENV_FILE}}
+          PASSWORDS_FILE:  {{.SECRETS_DIR}}/passwords.env
+          INVENTORY_FILE:  {{.ANSIBLE_INVENTORY_FILE}}
+        EOF

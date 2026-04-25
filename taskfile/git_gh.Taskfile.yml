@@ -1,0 +1,522 @@
+# ================================================================
+# File: taskfile/git_gh.Taskfile.yml
+# Purpose:
+#   Manage Git and GitHub CLI installation, operator identity,
+#   encrypted GitHub token storage, and GitHub authentication.
+#
+# Notes:
+#   - This file is intended to be included by the root Taskfile under
+#     the `git_gh:` namespace.
+#   - Ubuntu and Debian only for package installation tasks.
+#   - Non-sensitive values are stored in state/config/.env.
+#   - Sensitive values are stored in state/secrets/passwords/passwords.enc.env.
+#   - The shared secrets helper is reused for dotenv and SOPS-safe writes.
+# ================================================================
+
+version: '3'
+
+silent: true
+
+vars:
+  TASKFILE: '{{.TASKFILE | default "taskfile/git_gh.Taskfile.yml"}}'
+
+tasks:
+  tasklist:
+    internal: true
+    desc: Show available Git and GitHub tasks
+    cmds:
+      - task --taskfile {{.TASKFILE}} --list
+
+  help:
+    desc: Show the Git and GitHub operator menu
+    cmds:
+      - |
+        cat <<'EOF'
+
+        ----- Git and GitHub tasks -----
+
+        Setup:
+          task git_gh:bootstrap         Install, configure, authenticate, and report
+          task git_gh:install           Install git and GitHub CLI when missing
+
+        Identity and auth:
+          task git_gh:config:git        Configure git user.name and user.email
+          task git_gh:auth:gh           Store GitHub token and authenticate gh
+          task git_gh:auth:git          Configure git to use gh credentials
+
+        Reporting:
+          task git_gh:report            Show Git and GitHub status summary
+
+        ----- End -----
+
+        EOF
+
+  bootstrap:
+    desc: Install, configure, authenticate, and report
+    cmds:
+      - task: install
+      - task: config:git
+      - task: auth:gh
+      - task: auth:git
+      - task: report
+
+  install:
+    desc: Install git and GitHub CLI when missing
+    cmds:
+      - task: install:git
+      - task: install:gh
+
+  tools:check:apt:
+    internal: true
+    desc: Ensure the platform is Ubuntu or Debian with apt available
+    cmds:
+      - |
+        # ================================================================
+        # Task: tools:check:apt
+        # Purpose:
+        #   Validate Ubuntu or Debian package tooling.
+        # ================================================================
+        set -eu
+
+        command -v apt-get >/dev/null 2>&1
+        command -v dpkg >/dev/null 2>&1
+
+        if [ ! -r /etc/os-release ]; then
+          echo 'Unable to determine operating system from /etc/os-release.' >&2
+          exit 1
+        fi
+
+        os_id="$(. /etc/os-release && printf '%s' "$ID")"
+        case "$os_id" in
+          ubuntu|debian) ;;
+          *)
+            echo 'This task supports Ubuntu or Debian only.' >&2
+            exit 1
+            ;;
+        esac
+
+  install:git:
+    desc: Install git on Ubuntu or Debian only when missing
+    deps:
+      - task: tools:check:apt
+    cmds:
+      - |
+        # ================================================================
+        # Task: install:git
+        # Purpose:
+        #   Install git only when it is not already installed.
+        # ================================================================
+        set -eu
+
+        if command -v git >/dev/null 2>&1; then
+          echo 'git already installed'
+          exit 0
+        fi
+
+        if [ "$(id -u)" -eq 0 ]; then
+          apt-get update -y
+          env DEBIAN_FRONTEND='{{.DEBIAN_FRONTEND}}' apt-get install -y --no-install-recommends git
+        else
+          sudo apt-get update -y
+          sudo env DEBIAN_FRONTEND='{{.DEBIAN_FRONTEND}}' apt-get install -y --no-install-recommends git
+        fi
+
+        git --version
+
+  install:gh:
+    desc: Install GitHub CLI on Ubuntu or Debian only when missing
+    deps:
+      - task: tools:check:apt
+    cmds:
+      - |
+        # ================================================================
+        # Task: install:gh
+        # Purpose:
+        #   Install GitHub CLI only when it is not already installed.
+        # ================================================================
+        set -eu
+
+        if command -v gh >/dev/null 2>&1; then
+          echo 'gh already installed'
+          exit 0
+        fi
+
+        run_as_root() {
+          if [ "$(id -u)" -eq 0 ]; then
+            "$@"
+          else
+            sudo "$@"
+          fi
+        }
+
+        if ! command -v wget >/dev/null 2>&1; then
+          if [ "$(id -u)" -eq 0 ]; then
+            apt-get update -y
+            env DEBIAN_FRONTEND='{{.DEBIAN_FRONTEND}}' apt-get install -y --no-install-recommends wget ca-certificates
+          else
+            sudo apt-get update -y
+            sudo env DEBIAN_FRONTEND='{{.DEBIAN_FRONTEND}}' apt-get install -y --no-install-recommends wget ca-certificates
+          fi
+        fi
+
+        run_as_root mkdir -p -m 755 /etc/apt/keyrings
+        wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | run_as_root tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
+        run_as_root chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+        printf '%s\n' "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | run_as_root tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+
+        if [ "$(id -u)" -eq 0 ]; then
+          apt-get update -y
+          env DEBIAN_FRONTEND='{{.DEBIAN_FRONTEND}}' apt-get install -y --no-install-recommends gh
+        else
+          sudo apt-get update -y
+          sudo env DEBIAN_FRONTEND='{{.DEBIAN_FRONTEND}}' apt-get install -y --no-install-recommends gh
+        fi
+
+        gh --version
+
+  files:ensure:
+    internal: true
+    desc: Ensure repo config and secrets directories exist
+    cmds:
+      - |
+        # ================================================================
+        # Task: files:ensure
+        # Purpose:
+        #   Ensure directories and the local non-sensitive env file exist.
+        # ================================================================
+        set -eu
+
+        mkdir -p '{{.CONFIG_DIR}}' '{{.PASSWORDS_DIR}}' '{{.TMP_DIR}}'
+
+        if [ ! -f '{{.CONFIG_ENV_FILE}}' ]; then
+          echo 'Missing state/config/.env. Run ./install.sh first.' >&2
+          exit 1
+        fi
+
+  config:git:
+    desc: Configure git user.name and user.email and persist them
+    deps:
+      - task: files:ensure
+    cmds:
+      - |
+        # ================================================================
+        # Task: config:git
+        # Purpose:
+        #   Ensure git operator identity is configured from existing repo
+        #   values where possible, prompting only when required.
+        # Notes:
+        #   - Non-sensitive values are written to state/config/.env.
+        #   - Falls back to OPERATOR_NAME and OPERATOR_EMAIL from the base
+        #     repo secrets standard before prompting.
+        # ================================================================
+        set -eu
+        . '{{.TASK_HELPERS_FILE}}'
+
+        echo ''
+        echo ' --- GIT --- '
+
+        git_name="$(git config --global --get user.name 2>/dev/null || true)"
+        if [ -z "$git_name" ]; then
+          git_name="$(get_env_value '{{.CONFIG_ENV_FILE}}' GIT_USERNAME || true)"
+        fi
+        if [ -z "$git_name" ]; then
+          git_name="$(get_env_value '{{.CONFIG_ENV_FILE}}' OPERATOR_NAME || true)"
+        fi
+        if [ -z "$git_name" ]; then
+          git_name="$(prompt_if_missing_env_key '{{.CONFIG_ENV_FILE}}' GIT_USERNAME 'Git Username: ')"
+        fi
+        if [ -z "$git_name" ]; then
+          echo 'Git Username cannot be empty.' >&2
+          exit 1
+        fi
+
+        git_email="$(git config --global --get user.email 2>/dev/null || true)"
+        if [ -z "$git_email" ]; then
+          git_email="$(get_env_value '{{.CONFIG_ENV_FILE}}' GIT_EMAIL || true)"
+        fi
+        if [ -z "$git_email" ]; then
+          git_email="$(get_env_value '{{.CONFIG_ENV_FILE}}' OPERATOR_EMAIL || true)"
+        fi
+        if [ -z "$git_email" ]; then
+          git_email="$(prompt_if_missing_env_key '{{.CONFIG_ENV_FILE}}' GIT_EMAIL 'Git Email Address: ')"
+        fi
+        if [ -z "$git_email" ]; then
+          echo 'Git Email Address cannot be empty.' >&2
+          exit 1
+        fi
+
+        git config --global user.name "$git_name"
+        git config --global user.email "$git_email"
+
+        ensure_env_key_value '{{.CONFIG_ENV_FILE}}' GIT_USERNAME "$git_name"
+        ensure_env_key_value '{{.CONFIG_ENV_FILE}}' GIT_EMAIL "$git_email"
+
+        echo 'git identity configured and persisted'
+
+  auth:gh:
+    desc: Capture GitHub username and token, persist them, and authenticate gh
+    deps:
+      - task: files:ensure
+    cmds:
+      - |
+        # ================================================================
+        # Task: auth:gh
+        # Purpose:
+        #   Ensure GitHub username and token are available, save them to
+        #   the correct stores, and authenticate gh for github.com.
+        # Notes:
+        #   - GitHub username is non-sensitive and is written to .env.
+        #   - GitHub token is sensitive and is written only to the
+        #     encrypted passwords env file.
+        #   - Existing repo values are preferred before prompting.
+        #   - Invalid cached gh auth is treated as recoverable.
+        # ================================================================
+        set -eu
+        . '{{.TASK_HELPERS_FILE}}'
+
+        echo ''
+        echo ' --- GITHUB --- '
+
+        command -v gh >/dev/null 2>&1 || {
+          echo 'gh is not installed. Run task git_gh:install:gh first.' >&2
+          exit 1
+        }
+        command -v sops >/dev/null 2>&1 || {
+          echo 'sops is required to store the GitHub token securely.' >&2
+          exit 1
+        }
+        [ -f '{{.AGE_KEYS_FILE}}' ] || {
+          echo 'Age keys file not found. Initialise the repo secrets standard before storing tokens.' >&2
+          exit 1
+        }
+
+        read_passwords_value() {
+          lookup_key="$1"
+          tmp_file='{{.TMP_DIR}}/git-gh-passwords.env'
+
+          if [ ! -f '{{.PASSWORDS_ENC_ENV_FILE}}' ]; then
+            return 1
+          fi
+
+          rm -f "$tmp_file"
+
+          if ! SOPS_AGE_KEY_FILE='{{.AGE_KEYS_FILE}}' sops --decrypt '{{.PASSWORDS_ENC_ENV_FILE}}' > "$tmp_file" 2>/dev/null; then
+            rm -f "$tmp_file"
+            return 1
+          fi
+
+          chmod 600 "$tmp_file"
+          value="$(get_env_value "$tmp_file" "$lookup_key" || true)"
+          rm -f "$tmp_file"
+
+          if [ -n "$value" ]; then
+            printf '%s' "$value"
+            return 0
+          fi
+
+          return 1
+        }
+
+        gh_status_output="$(gh auth status --hostname github.com 2>&1 || true)"
+        gh_status_active='false'
+        if printf '%s\n' "$gh_status_output" | grep -Fq 'Logged in to github.com'; then
+          gh_status_active='true'
+        fi
+
+        github_username="$(get_env_value '{{.CONFIG_ENV_FILE}}' GITHUB_USERNAME || true)"
+        if [ -z "$github_username" ] && [ "$gh_status_active" = 'true' ]; then
+          github_username="$(printf '%s\n' "$gh_status_output" | awk '/Logged in to github.com account/ {print $6; exit}')"
+        fi
+        if [ -z "$github_username" ]; then
+          github_username="$(get_env_value '{{.CONFIG_ENV_FILE}}' GIT_USERNAME || true)"
+        fi
+        if [ -z "$github_username" ]; then
+          github_username="$(get_env_value '{{.CONFIG_ENV_FILE}}' OPERATOR_NAME || true)"
+        fi
+        if [ -z "$github_username" ]; then
+          github_username="$(prompt_if_missing_env_key '{{.CONFIG_ENV_FILE}}' GITHUB_USERNAME 'GitHub Username: ')"
+        fi
+        if [ -z "$github_username" ]; then
+          echo 'GitHub Username cannot be empty.' >&2
+          exit 1
+        fi
+        ensure_env_key_value '{{.CONFIG_ENV_FILE}}' GITHUB_USERNAME "$github_username"
+
+        github_token="$(read_passwords_value GITHUB_TOKEN || true)"
+        if [ -z "$github_token" ] && [ "$gh_status_active" = 'true' ]; then
+          github_token="$(gh auth token 2>/dev/null || true)"
+        fi
+
+        prompt_for_token() {
+          token_value=''
+
+          require_tty 'GITHUB_TOKEN'
+          token_value="$(tty_prompt_secret 'GitHub Token: ')"
+
+          if [ -z "$token_value" ]; then
+            echo 'GitHub Token cannot be empty.' >&2
+            exit 1
+          fi
+
+          printf '%s' "$token_value"
+        }
+
+        validate_token() {
+          token_value="$1"
+          GH_TOKEN="$token_value" gh api user >/dev/null 2>&1
+        }
+
+        if [ -n "$github_token" ]; then
+          if ! validate_token "$github_token"; then
+            github_token=''
+          fi
+        fi
+
+        if [ -z "$github_token" ]; then
+          github_token="$(prompt_for_token)"
+          if ! validate_token "$github_token"; then
+            echo 'The supplied GitHub token is not valid for github.com.' >&2
+            exit 1
+          fi
+        fi
+
+        encrypted_dotenv_upsert GITHUB_TOKEN "$github_token" '{{.PASSWORDS_ENC_ENV_FILE}}' '{{.AGE_KEYS_FILE}}' '{{.PASSWORDS_ENC_ENV_FILE_REL}}'
+
+        if ! printf '%s' "$github_token" | gh auth login --hostname github.com --git-protocol https --skip-ssh-key --with-token >/dev/null 2>&1; then
+          if [ -t 0 ]; then
+            echo 'Stored token could not be used to authenticate gh. Please enter a fresh token.' >&2
+            github_token="$(prompt_for_token)"
+            if ! validate_token "$github_token"; then
+              echo 'The supplied GitHub token is not valid for github.com.' >&2
+              exit 1
+            fi
+            encrypted_dotenv_upsert GITHUB_TOKEN "$github_token" '{{.PASSWORDS_ENC_ENV_FILE}}' '{{.AGE_KEYS_FILE}}' '{{.PASSWORDS_ENC_ENV_FILE_REL}}'
+            printf '%s' "$github_token" | gh auth login --hostname github.com --git-protocol https --skip-ssh-key --with-token >/dev/null
+          else
+            echo 'gh authentication failed with the available token and no interactive terminal is available.' >&2
+            exit 1
+          fi
+        fi
+
+        echo 'gh authenticated and token stored in the encrypted passwords env file'
+
+  auth:git:
+    desc: Configure git to use gh credentials for github.com
+    cmds:
+      - |
+        # ================================================================
+        # Task: auth:git
+        # Purpose:
+        #   Configure git to use gh as the credential helper for GitHub.
+        # ================================================================
+        set -eu
+
+        if ! command -v git >/dev/null 2>&1; then
+          echo 'git is not installed. Run task git_gh:install:git first.' >&2
+          exit 1
+        fi
+
+        if ! command -v gh >/dev/null 2>&1; then
+          echo 'gh is not installed. Run task git_gh:install:gh first.' >&2
+          exit 1
+        fi
+
+        if ! gh auth status --hostname github.com >/dev/null 2>&1; then
+          echo 'gh is not authenticated. Run task git_gh:auth:gh first.' >&2
+          exit 1
+        fi
+
+        if git config --global --get-all credential.https://github.com.helper 2>/dev/null | grep -Fq 'gh auth git-credential'; then
+          echo 'git already configured to use gh for github.com'
+          exit 0
+        fi
+
+        gh auth setup-git --hostname github.com
+        echo 'git configured to use gh credentials for github.com'
+
+  report:
+    desc: Show the current Git and GitHub setup summary
+    deps:
+      - task: files:ensure
+    cmds:
+      - |
+        # ================================================================
+        # Task: report
+        # Purpose:
+        #   Show the current state of Git, gh, and related configuration.
+        # ================================================================
+        set -eu
+        . '{{.TASK_HELPERS_FILE}}'
+
+        read_passwords_value() {
+          lookup_key="$1"
+          tmp_file='{{.TMP_DIR}}/git-gh-report-passwords.env'
+
+          if [ ! -f '{{.PASSWORDS_ENC_ENV_FILE}}' ] || [ ! -f '{{.AGE_KEYS_FILE}}' ]; then
+            return 1
+          fi
+
+          rm -f "$tmp_file"
+
+          if ! SOPS_AGE_KEY_FILE='{{.AGE_KEYS_FILE}}' sops --decrypt '{{.PASSWORDS_ENC_ENV_FILE}}' > "$tmp_file" 2>/dev/null; then
+            rm -f "$tmp_file"
+            return 1
+          fi
+
+          chmod 600 "$tmp_file"
+          value="$(get_env_value "$tmp_file" "$lookup_key" || true)"
+          rm -f "$tmp_file"
+
+          if [ -n "$value" ]; then
+            printf '%s' "$value"
+            return 0
+          fi
+
+          return 1
+        }
+
+        echo 'Git and GitHub status summary'
+        echo '-----------------------------'
+
+        if command -v git >/dev/null 2>&1; then
+          echo "git installed: yes ($(git --version))"
+        else
+          echo 'git installed: no'
+        fi
+
+        if command -v gh >/dev/null 2>&1; then
+          echo "gh installed: yes ($(gh --version | head -n 1))"
+        else
+          echo 'gh installed: no'
+        fi
+
+        git_name="$(git config --global --get user.name 2>/dev/null || true)"
+        git_email="$(git config --global --get user.email 2>/dev/null || true)"
+        echo "git user.name: ${git_name:-missing}"
+        echo "git user.email: ${git_email:-missing}"
+
+        github_username="$(get_env_value '{{.CONFIG_ENV_FILE}}' GITHUB_USERNAME || true)"
+        if [ -n "$github_username" ]; then
+          echo 'GitHub username in state/config/.env: present'
+        else
+          echo 'GitHub username in state/config/.env: missing'
+        fi
+
+        github_token="$(read_passwords_value GITHUB_TOKEN || true)"
+        if [ -n "$github_token" ]; then
+          echo 'GitHub token in encrypted passwords env: present'
+        else
+          echo 'GitHub token in encrypted passwords env: missing'
+        fi
+
+        if command -v gh >/dev/null 2>&1 && gh auth status --hostname github.com >/dev/null 2>&1; then
+          echo 'gh authentication: active'
+        else
+          echo 'gh authentication: not active'
+        fi
+
+        if git config --global --get-all credential.https://github.com.helper 2>/dev/null | grep -Fq 'gh auth git-credential'; then
+          echo 'git credential helper for github.com: gh configured'
+        else
+          echo 'git credential helper for github.com: not configured'
+        fi

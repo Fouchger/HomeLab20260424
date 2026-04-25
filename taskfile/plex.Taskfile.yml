@@ -1,0 +1,28 @@
+# ==============================================================================
+# File: taskfile/plex.Taskfile.yml
+# Purpose:
+#   plex domain entrypoints for the homelab repository.
+# Notes:
+#   - This file preserves the production structure and is ready for domain-specific tasks.
+#   - No destructive action is implemented without explicit future configuration.
+# ==============================================================================
+
+version: '3'
+
+silent: true
+
+tasks:
+  help:
+    desc: Show plex tasks
+    cmds:
+      - |
+        cat <<'HELP'
+        plex tasks:
+          task plex:help
+          task plex:report
+        HELP
+
+  report:
+    desc: Show plex domain status
+    cmds:
+      - echo 'plex domain scaffold is present. Add configured tasks when variables are defined.'

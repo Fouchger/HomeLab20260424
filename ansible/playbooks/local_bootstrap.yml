@@ -1,0 +1,47 @@
+---
+# ==============================================================================
+# File: ansible/playbooks/local_bootstrap.yml
+# Purpose:
+#   Bootstrap local homelab operator tooling in an idempotent Ansible playbook.
+# Notes:
+#   - Debian/Ubuntu oriented.
+#   - Safe to re-run.
+# ==============================================================================
+
+- name: Bootstrap local homelab tooling
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+
+  vars:
+    homelab_base_packages:
+      - ca-certificates
+      - curl
+      - git
+      - gnupg
+      - jq
+      - openssh-client
+      - python3
+      - python3-venv
+      - rsync
+      - unzip
+
+  tasks:
+    - name: Ensure apt cache is current
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_facts.os_family == 'Debian'
+
+    - name: Install base homelab packages
+      ansible.builtin.apt:
+        name: "{{ homelab_base_packages }}"
+        state: present
+        install_recommends: false
+      when: ansible_facts.os_family == 'Debian'
+
+    - name: Fail clearly for unsupported operating systems
+      ansible.builtin.fail:
+        msg: "This bootstrap currently supports Debian/Ubuntu only."
+      when: ansible_facts.os_family != 'Debian'

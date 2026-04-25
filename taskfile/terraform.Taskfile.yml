@@ -1,0 +1,28 @@
+# ==============================================================================
+# File: taskfile/terraform.Taskfile.yml
+# Purpose:
+#   terraform domain entrypoints for the homelab repository.
+# Notes:
+#   - This file preserves the production structure and is ready for domain-specific tasks.
+#   - No destructive action is implemented without explicit future configuration.
+# ==============================================================================
+
+version: '3'
+
+silent: true
+
+tasks:
+  help:
+    desc: Show terraform tasks
+    cmds:
+      - |
+        cat <<'HELP'
+        terraform tasks:
+          task terraform:help
+          task terraform:report
+        HELP
+
+  report:
+    desc: Show terraform domain status
+    cmds:
+      - echo 'terraform domain scaffold is present. Add configured tasks when variables are defined.'
