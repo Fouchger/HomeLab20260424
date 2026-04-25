@@ -335,6 +335,8 @@ tasks:
     cmds:
       - |
         set -eu
+        . '{{.TASK_HELPERS_FILE}}'
+        export PATH="${HOME:-/root}/.local/bin:${PATH}"
         echo 'Homelab doctor'
         for command_name in git curl task ansible-playbook ssh ssh-keygen; do
           if command -v "$command_name" >/dev/null 2>&1; then
@@ -362,7 +364,7 @@ tasks:
     desc: task to run all day1 tasks
     cmds:
       - |
-        ./install.sh
+        bash ./install.sh
       - task: doctor
       - task: bootstrap
       - task: config:init

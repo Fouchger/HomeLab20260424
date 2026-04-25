@@ -178,3 +178,53 @@ require_command() {
     return 1
   fi
 }
+ensure_homelab_tool_path() {
+  current_user="${SUDO_USER:-${USER:-$(id -un)}}"
+  current_home="$(getent passwd "$current_user" 2>/dev/null | cut -d: -f6)"
+  if [ -z "$current_home" ]; then
+    current_home="${HOME:-/root}"
+  fi
+
+  case ":${PATH}:" in
+    *":${current_home}/.local/bin:"*) ;;
+    *) PATH="${current_home}/.local/bin:${PATH}" ;;
+  esac
+
+  case ":${PATH}:" in
+    *":${HOME:-/root}/.local/bin:"*) ;;
+    *) PATH="${HOME:-/root}/.local/bin:${PATH}" ;;
+  esac
+
+  export PATH
+}
+
+resolve_command_path() {
+  command_name="${1:?Missing command name}"
+
+  current_user="${SUDO_USER:-${USER:-$(id -un)}}"
+  current_home="$(getent passwd "$current_user" 2>/dev/null | cut -d: -f6)"
+  if [ -z "$current_home" ]; then
+    current_home="${HOME:-/root}"
+  fi
+  PATH="$current_home/.local/bin:${HOME:-/root}/.local/bin:${PATH}"
+  export PATH
+
+  if command -v "$command_name" >/dev/null 2>&1; then
+    command -v "$command_name"
+    return 0
+  fi
+
+  if [ -x "${HOME:-/root}/.local/bin/${command_name}" ]; then
+    printf '%s\n' "${HOME:-/root}/.local/bin/${command_name}"
+    return 0
+  fi
+
+  if [ -x "${HOME:-/root}/.local/share/pipx/venvs/ansible/bin/${command_name}" ]; then
+    printf '%s\n' "${HOME:-/root}/.local/share/pipx/venvs/ansible/bin/${command_name}"
+    return 0
+  fi
+
+  printf '%s\n' "ERROR: Required command not found: ${command_name}" >&2
+  printf '%s\n' "PATH=${PATH}" >&2
+  return 1
+}

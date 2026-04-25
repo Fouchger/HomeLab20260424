@@ -48,6 +48,8 @@ tasks:
     deps: [deps]
     cmds:
       - |
+        . '{{.TASK_HELPERS_FILE}}'
+        ansible_playbook_cmd="$(resolve_command_path ansible-playbook)"
         set -eu
 
         : "${MIKROTIK_HOST:?Set MIKROTIK_HOST to the router IP or DNS name.}"
@@ -93,7 +95,7 @@ tasks:
         ANSIBLE_HOST_KEY_CHECKING='{{.MIKROTIK_HOST_KEY_CHECKING}}' \
         MIKROTIK_BACKUP_ROOT='{{.ROOT_DIR}}/state/mikrotik' \
         MIKROTIK_BACKUP_STAMP="$backup_stamp" \
-          ansible-playbook \
+          "${ansible_playbook_cmd}" \
             -i "$inventory_file" \
             '{{.ROOT_DIR}}/ansible/playbooks/mikrotik_backup.yml'
 

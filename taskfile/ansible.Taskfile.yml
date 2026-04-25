@@ -88,6 +88,8 @@ tasks:
       - task: pipx
       - |
         set -euo pipefail
+        . '{{.TASK_HELPERS_FILE}}'
+        export PATH="${HOME:-/root}/.local/bin:${PATH}"
 
         current_user="${SUDO_USER:-${USER:-$(id -un)}}"
         current_home="$(getent passwd "${current_user}" | cut -d: -f6)"
@@ -300,7 +302,11 @@ tasks:
       - ansible
       - inventory:ensure
     cmds:
-      - ansible all -i '{{.ANSIBLE_INVENTORY_FILE}}' -m ping
+      - |
+        set -euo pipefail
+        . '{{.TASK_HELPERS_FILE}}'
+        ansible_cmd="$(resolve_command_path ansible)"
+        "${ansible_cmd}" all -i '{{.ANSIBLE_INVENTORY_FILE}}' -m ping
 
   syntax:
     desc: Run Ansible syntax checks
@@ -308,4 +314,8 @@ tasks:
       - ansible
       - inventory:ensure
     cmds:
-      - ansible-playbook -i '{{.ANSIBLE_INVENTORY_FILE}}' '{{.ROOT_DIR}}/ansible/playbooks/local_bootstrap.yml' --syntax-check
+      - |
+        set -euo pipefail
+        . '{{.TASK_HELPERS_FILE}}'
+        ansible_playbook_cmd="$(resolve_command_path ansible-playbook)"
+        "${ansible_playbook_cmd}" -i '{{.ANSIBLE_INVENTORY_FILE}}' '{{.ROOT_DIR}}/ansible/playbooks/local_bootstrap.yml' --syntax-check
