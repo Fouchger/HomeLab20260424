@@ -67,6 +67,26 @@ ensure_env_key_value() {
   chmod 600 "$file_path" 2>/dev/null || true
 }
 
+reject_multiline_value() {
+  key_name="${1:?Missing key name}"
+  key_value="${2-}"
+
+  case "$key_value" in
+    *"
+"*)
+      printf '%s\n' "ERROR: Multi-line values are not supported for $key_name" >&2
+      return 1
+      ;;
+  esac
+}
+
+yaml_single_quote_value() {
+  key_value="${1-}"
+  printf "'"
+  printf '%s' "$key_value" | sed "s/'/''/g"
+  printf "'\n"
+}
+
 require_tty() {
   prompt_name="${1:-input}"
   if [ ! -t 0 ] && [ ! -r /dev/tty ]; then
@@ -129,6 +149,65 @@ prompt_if_missing_env_key() {
   printf '%s\n' "$input_value"
 }
 
+
+decrypt_env_key_value() {
+  encrypted_file="${1:?Missing encrypted dotenv file path}"
+  key_name="${2:?Missing key name}"
+  age_keys_file="${3:?Missing age keys file}"
+
+  [ -f "$encrypted_file" ] || return 1
+  [ -f "$age_keys_file" ] || return 1
+  require_command sops
+
+  tmp_plain="$(mktemp)"
+  if ! SOPS_AGE_KEY_FILE="$age_keys_file" sops --decrypt \
+    --input-type dotenv \
+    --output-type dotenv \
+    "$encrypted_file" > "$tmp_plain" 2>/dev/null; then
+    rm -f "$tmp_plain"
+    return 1
+  fi
+
+  chmod 600 "$tmp_plain" 2>/dev/null || true
+  get_env_value "$tmp_plain" "$key_name"
+  status="$?"
+  rm -f "$tmp_plain"
+  return "$status"
+}
+
+prompt_if_missing_encrypted_env_key() {
+  encrypted_file="${1:?Missing encrypted dotenv file path}"
+  key_name="${2:?Missing key name}"
+  prompt_text="${3:-Secret: }"
+  age_keys_file="${4:?Missing age keys file}"
+  filename_override="${5:-$encrypted_file}"
+
+  existing_value="$(decrypt_env_key_value "$encrypted_file" "$key_name" "$age_keys_file" || true)"
+
+  if [ -n "$existing_value" ]; then
+    printf '%s\n' "$existing_value"
+    return 0
+  fi
+
+  [ -f "$age_keys_file" ] || {
+    printf '%s\n' "ERROR: Age identities not found: $age_keys_file" >&2
+    printf '%s\n' 'Run: task secrets:prepare first.' >&2
+    return 1
+  }
+
+  require_command sops
+  require_tty "$key_name"
+
+  input_value="$(tty_prompt_secret "$prompt_text")"
+
+  if [ -z "$input_value" ]; then
+    printf '%s\n' "ERROR: $key_name cannot be empty." >&2
+    return 1
+  fi
+
+  encrypted_dotenv_upsert "$key_name" "$input_value" "$encrypted_file" "$age_keys_file" "$filename_override"
+  printf '%s\n' "$input_value"
+}
 encrypted_dotenv_upsert() {
   key_name="${1:?Missing key name}"
   key_value="${2-}"
