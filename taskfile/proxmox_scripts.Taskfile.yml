@@ -1,76 +1,115 @@
-# ================================================================
-# File: taskfile/proxmox_scripts.Taskfile.yml
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+---
+# =============================================================================
+# Proxmox helper script tasks
+# =============================================================================
 # Purpose:
-#   Run Proxmox helper scripts that install or configure add-ons on
-#   the homelab Proxmox host.
+#   Provide explicit operator entry points for helper scripts used by this repo.
 #
 # Notes:
-#   - Uses the root Taskfile variables and helper script locations.
-#   - Installer tasks run on the local server where Task is executed.
-# ================================================================
+#   - The code-server installer is intentionally interactive.
+#   - The operator must choose between the latest upstream community script and
+#     the reviewed static copy stored in this repository.
+#   - The selected script runs locally on the server where this repo is checked
+#     out. This task does not assume that the local server is a Proxmox host.
+# =============================================================================
 
 version: '3'
 
-silent: true
+vars:
+  CODE_SERVER_UPSTREAM_URL: https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coder-code-server.sh
+  CODE_SERVER_STATIC_SCRIPT: services/proxmox_helper_scripts/coder-code-server.sh
 
 tasks:
   code-server:install:
-    desc: Install Coder code-server on the current Proxmox server using latest upstream or fixed local helper script
+    desc: Install code-server using either the latest upstream script or the reviewed static repo script.
     cmds:
       - |
-        # ================================================================
-        # Task: code-server:install
-        # Purpose:
-        #   Install Coder code-server on the server where this repository
-        #   and Task command are being run. Run this task directly on the
-        #   target Proxmox host, not from a workstation over SSH.
-        # ================================================================
-        set -eu
-        . '{{.TASK_HELPERS_FILE}}'
+        set -euo pipefail
 
-        require_command awk
-        require_command sed
+        repo_root="$(pwd)"
+        upstream_url="{{.CODE_SERVER_UPSTREAM_URL}}"
+        static_script="${repo_root}/{{.CODE_SERVER_STATIC_SCRIPT}}"
 
-        helper_script='{{.ROOT_DIR}}/services/proxmox_helper_scripts/coder-code-server.sh'
-
-        [ -f "$helper_script" ] || {
-          echo "Required helper script not found: $helper_script" >&2
-          exit 1
+        require_command() {
+          command -v "$1" >/dev/null 2>&1 || {
+            echo "ERROR: Required command not found: $1" >&2
+            exit 1
+          }
         }
 
-        fixed_version="$(awk -F= '/^VERSION=/{print $2; exit}' "$helper_script" | sed "s/[\"']//g")"
-        if [ -z "$fixed_version" ]; then
-          echo "Unable to determine VERSION from $helper_script" >&2
+        require_command bash
+        require_command curl
+        require_command hostname
+
+        if [[ ! -f "$static_script" ]]; then
+          echo "ERROR: Static code-server helper script was not found: $static_script" >&2
           exit 1
         fi
 
-        cat <<EOF
-        Coder code-server install options
-        ---------------------------------
-        1. latest  - Run the latest upstream Proxmox helper script from GitHub
-        2. fixed   - Run the local pinned helper script version ${fixed_version}
+        echo
+        echo "Code-server installer"
+        echo "====================="
+        echo "This task runs locally on the server where the repo is checked out."
+        echo
+        echo "Available install sources:"
+        echo "  1) latest  - Download and run the latest upstream community script"
+        echo "  2) static  - Run the reviewed static script from this repository"
+        echo
 
-        Target: local server running this Taskfile
-        EOF
+        while true; do
+          printf "Select install source [static]: "
+          read -r install_source
 
-        printf 'Install latest or fixed version? [fixed]: '
-        read -r install_choice
-        install_choice="${install_choice:-fixed}"
+          install_source="${install_source:-static}"
 
-        case "$install_choice" in
-          latest|Latest|LATEST|l|L|1)
-            require_command curl
-            echo 'Installing latest code-server using the upstream community script on this server.'
-            bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coder-code-server.sh)"
-            ;;
-          fixed|Fixed|FIXED|f|F|2)
-            echo "Installing fixed code-server version ${fixed_version} using the local helper script on this server."
-            chmod 700 "$helper_script"
-            bash "$helper_script"
-            ;;
-          *)
-            echo "Invalid choice: $install_choice" >&2
-            echo 'Use latest or fixed.' >&2
-            exit 1
-            ;;
-        esac
+          case "$install_source" in
+            1|latest)
+              selected_source="latest"
+              break
+              ;;
+            2|static)
+              selected_source="static"
+              break
+              ;;
+            *)
+              echo "ERROR: Enter 1, 2, latest, or static."
+              ;;
+          esac
+        done
+
+        echo
+        echo "Code-server install summary"
+        echo "==========================="
+        echo "Host:              $(hostname -f 2>/dev/null || hostname)"
+        echo "Repository path:   $repo_root"
+        echo "Selected source:   $selected_source"
+
+        if [[ "$selected_source" == "latest" ]]; then
+          echo "Upstream URL:      $upstream_url"
+          echo "Version policy:    Latest at execution time, not pinned"
+          echo
+          echo "WARNING: This will execute code downloaded from the upstream URL above."
+          printf "Continue with latest upstream script? [y/N]: "
+          read -r confirm_latest
+
+          case "$confirm_latest" in
+            y|Y|yes|YES)
+              bash -c "$(curl -fsSL "$upstream_url")"
+              ;;
+            *)
+              echo "INFO: Cancelled."
+              exit 0
+              ;;
+          esac
+        else
+          echo "Static script:     $static_script"
+          echo "Version policy:    Reviewed repo copy"
+          echo
+          bash "$static_script"
+        fi
+
+  code-server:
+    desc: Alias for code-server:install.
+    cmds:
+      - task: code-server:install
