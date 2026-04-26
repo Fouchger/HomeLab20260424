@@ -189,7 +189,7 @@ tasks:
 
         echo 'Step 4/5: Remove temporary inventory containing connection secrets.'
         cleanup_router_inventory
-        trap - EXIT INT TERM
+        trap - EXIT
 
         echo 'Step 5/5: MikroTik backup completed.'
         echo "MikroTik backup folder: {{.MIKROTIK_DIR}}/$backup_stamp"
