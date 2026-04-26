@@ -1,0 +1,104 @@
+# ==============================================================================
+# File: taskfile/technitium.Taskfile.yml
+# Purpose:
+#   Technitium DNS LXC provisioning and configuration tasks.
+# Notes:
+#   - LXC creation uses the pinned Proxmox helper script without modification.
+#   - Runtime variables are stored in state/config/.env using TECHNITIUM_* keys.
+#   - Ansible is used for repeatable post-create configuration.
+# ==============================================================================
+
+version: '3'
+
+silent: true
+
+tasks:
+  help:
+    desc: Show Technitium DNS tasks
+    cmds:
+      - |
+        cat <<'HELP'
+        Technitium DNS tasks:
+          task technitium:help
+          task technitium:plan       -> Prompt variables, run safety checks, update inventory
+          task technitium:apply      -> Plan, create missing LXCs, configure with Ansible
+          task technitium:configure  -> Re-apply Technitium configuration to existing inventory hosts
+          task technitium:report     -> Show saved non-secret Technitium variables
+
+        Notes:
+          - Run on the Proxmox host for LXC creation because the community helper
+            script expects local Proxmox tools such as pct.
+          - Existing containers are not recreated unless you explicitly confirm it.
+          - Configuration can be re-run safely to converge settings.
+        HELP
+
+  plan:
+    desc: Plan Technitium LXC deployment and update Ansible inventory
+    deps:
+      - :dirs:ensure
+    cmds:
+      - |
+        set -euo pipefail
+        ROOT_DIR='{{.ROOT_DIR}}' \
+        CONFIG_ENV_FILE='{{.CONFIG_ENV_FILE}}' \
+        ANSIBLE_INVENTORY_FILE='{{.ANSIBLE_INVENTORY_FILE}}' \
+        TASK_HELPERS_FILE='{{.TASK_HELPERS_FILE}}' \
+        TMP_DIR='{{.TMP_DIR}}' \
+        SSH_PRIVATE_KEY='{{.SSH_PRIVATE_KEY}}' \
+        PASSWORDS_ENC_ENV_FILE='{{.PASSWORDS_ENC_ENV_FILE}}' \
+        PASSWORDS_ENC_ENV_FILE_REL='{{.PASSWORDS_ENC_ENV_FILE_REL}}' \
+        AGE_KEYS_FILE='{{.AGE_KEYS_FILE}}' \
+          '{{.ROOT_DIR}}/scripts/technitium/technitium-run.sh' plan
+
+  apply:
+    desc: Create and configure Technitium DNS LXCs
+    deps:
+      - :dirs:ensure
+      - :ansible:python-deps
+    cmds:
+      - |
+        set -euo pipefail
+        ROOT_DIR='{{.ROOT_DIR}}' \
+        CONFIG_ENV_FILE='{{.CONFIG_ENV_FILE}}' \
+        ANSIBLE_INVENTORY_FILE='{{.ANSIBLE_INVENTORY_FILE}}' \
+        TASK_HELPERS_FILE='{{.TASK_HELPERS_FILE}}' \
+        TMP_DIR='{{.TMP_DIR}}' \
+        SSH_PRIVATE_KEY='{{.SSH_PRIVATE_KEY}}' \
+        PASSWORDS_ENC_ENV_FILE='{{.PASSWORDS_ENC_ENV_FILE}}' \
+        PASSWORDS_ENC_ENV_FILE_REL='{{.PASSWORDS_ENC_ENV_FILE_REL}}' \
+        AGE_KEYS_FILE='{{.AGE_KEYS_FILE}}' \
+          '{{.ROOT_DIR}}/scripts/technitium/technitium-run.sh' apply
+
+  configure:
+    desc: Re-apply Technitium DNS configuration through Ansible
+    deps:
+      - :ansible:python-deps
+    cmds:
+      - |
+        set -euo pipefail
+        ROOT_DIR='{{.ROOT_DIR}}' \
+        CONFIG_ENV_FILE='{{.CONFIG_ENV_FILE}}' \
+        ANSIBLE_INVENTORY_FILE='{{.ANSIBLE_INVENTORY_FILE}}' \
+        TASK_HELPERS_FILE='{{.TASK_HELPERS_FILE}}' \
+        TMP_DIR='{{.TMP_DIR}}' \
+        SSH_PRIVATE_KEY='{{.SSH_PRIVATE_KEY}}' \
+        PASSWORDS_ENC_ENV_FILE='{{.PASSWORDS_ENC_ENV_FILE}}' \
+        PASSWORDS_ENC_ENV_FILE_REL='{{.PASSWORDS_ENC_ENV_FILE_REL}}' \
+        AGE_KEYS_FILE='{{.AGE_KEYS_FILE}}' \
+          '{{.ROOT_DIR}}/scripts/technitium/technitium-run.sh' configure
+
+  report:
+    desc: Show saved Technitium non-secret variables
+    cmds:
+      - |
+        set -euo pipefail
+        ROOT_DIR='{{.ROOT_DIR}}' \
+        CONFIG_ENV_FILE='{{.CONFIG_ENV_FILE}}' \
+        ANSIBLE_INVENTORY_FILE='{{.ANSIBLE_INVENTORY_FILE}}' \
+        TASK_HELPERS_FILE='{{.TASK_HELPERS_FILE}}' \
+        TMP_DIR='{{.TMP_DIR}}' \
+        SSH_PRIVATE_KEY='{{.SSH_PRIVATE_KEY}}' \
+        PASSWORDS_ENC_ENV_FILE='{{.PASSWORDS_ENC_ENV_FILE}}' \
+        PASSWORDS_ENC_ENV_FILE_REL='{{.PASSWORDS_ENC_ENV_FILE_REL}}' \
+        AGE_KEYS_FILE='{{.AGE_KEYS_FILE}}' \
+          '{{.ROOT_DIR}}/scripts/technitium/technitium-run.sh' report

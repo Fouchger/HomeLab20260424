@@ -62,6 +62,6 @@ task validate
 - SSH identity and Proxmox SSH trust bootstrap
 - Proxmox API user/token and node discovery
 - Secrets management with age, SOPS and OpenBao
-- Technitium DNS configuration helper
+- Technitium DNS LXC provisioning and configuration
 - OMV disk passthrough discovery helper
 - Proxmox helper scripts for Code Server and Technitium DNS

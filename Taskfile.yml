@@ -55,6 +55,7 @@ includes:
   secrets: ./taskfile/secrets.Taskfile.yml
   ssh: ./taskfile/ssh.Taskfile.yml
   terraform: ./taskfile/terraform.Taskfile.yml
+  technitium: ./taskfile/technitium.Taskfile.yml
   traefik: ./taskfile/traefik.Taskfile.yml
   proxmox_scripts: ./taskfile/proxmox_scripts.Taskfile.yml
 
@@ -101,31 +102,36 @@ tasks:
         6. Initialise and store secrets
             task secrets:design     → Defines required secrets structure
             task secrets:prepare    → Creates local secret storage files
-            task secrets:bootstrap  → Prompts once for secrets and stores securely
-            task secrets:report     → Shows secret status (without exposing values)
+            task secrets:bootstrap          → Prompts once for secrets and stores securely
+            task secrets:report             → Shows secret status (without exposing values)
 
         7. Configure SSH access
-            task ssh:bootstrap      → Generates SSH keys and configures access to remote hosts (e.g. Proxmox)
+            task ssh:bootstrap              → Generates SSH keys and configures access to remote hosts (e.g. Proxmox)
 
         8. Configure Git and GitHub access
-          task git_gh:bootstrap     → Authenticates GitHub CLI and prepares repo access
+          task git_gh:bootstrap             → Authenticates GitHub CLI and prepares repo access
 
         9. Configure Proxmox automation
-          task proxmox:bootstrap    → Creates automation user, API token, and discovers nodes
+          task proxmox:bootstrap            → Creates automation user, API token, and discovers nodes
 
         10. Validate repository and configuration
-            task validate           → Checks structure, shell syntax, and required files
+            task validate                   → Checks structure, shell syntax, and required files
 
         11. Verify Ansible connectivity (after hosts exist)
-            task ansible:syntax     → Validates Ansible playbooks
-            task ansible:ping       → Confirms connectivity to managed hosts
+            task ansible:syntax             → Validates Ansible playbooks
+            task ansible:ping               → Confirms connectivity to managed hosts
 
         12. Mikrotik hap ax2 configuration (RUN MANUALLY)
-            task router:backup      -> Back up a MikroTik RouterOS export
-            task router:render      -> Render desired RouterOS install script only
-            task router:plan        -> Render and diff against live RouterOS export
-            task router:apply       -> Apply complete managed RouterOS configuration
+            task router:backup              -> Back up a MikroTik RouterOS export
+            task router:render              -> Render desired RouterOS install script only
+            task router:plan                -> Render and diff against live RouterOS export
+            task router:apply               -> Apply complete managed RouterOS configuration
 
+        13. Technitium DNS
+            task technitium:plan            -> 
+            task technitium:apply           -> 
+            task technitium:configure       -> 
+            task technitium:report          -> 
 
         ──────────────────────────────────────────────────────────────
         Day-to-day operations (regular use)
@@ -152,7 +158,8 @@ tasks:
         task packer:help            → Image/template builds (scaffolded)
         task network:help           → Network configuration (scaffolded)
         task router:help            → Router automation (scaffolded)
-        task dns:help               → DNS services such as Technitium (scaffolded)
+        task dns:help               → DNS services overview
+        task technitium:help        → Technitium DNS LXC provisioning and configuration
         task traefik:help           → Reverse proxy configuration (scaffolded)
         task cloudflare:help        → Cloudflare integration (scaffolded)
         task plex:help              → Plex service deployment (scaffolded)

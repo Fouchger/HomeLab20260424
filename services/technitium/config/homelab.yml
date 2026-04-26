@@ -1,0 +1,14 @@
+---
+# ==============================================================================
+# File: services/technitium/config/homelab.yml
+# Purpose:
+#   Reference profile for Technitium DNS LXC deployment in the homelab.
+# Notes:
+#   - Runtime values are stored in state/config/.env and state/ansible/inventory.yml.
+#   - This committed file documents the profile only and does not contain secrets.
+# ==============================================================================
+
+profile_name: homelab
+service_role: technitium_dns
+provisioner: proxmox_helper_scripts
+helper_script: services/proxmox_helper_scripts/technitiumdns.sh

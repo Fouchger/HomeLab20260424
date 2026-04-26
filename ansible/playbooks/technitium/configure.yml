@@ -1,0 +1,62 @@
+---
+# ==============================================================================
+# File: ansible/playbooks/technitium/configure.yml
+# Purpose:
+#   Configure Technitium DNS Server on existing Proxmox LXC hosts.
+# Notes:
+#   - LXC creation is handled by services/proxmox_helper_scripts/technitiumdns.sh.
+#   - This playbook keeps configuration idempotent by re-running the Technitium
+#     homelab configuration script with inventory-driven variables.
+# ==============================================================================
+
+- name: Configure Technitium DNS LXC hosts
+  hosts: technitium
+  become: true
+  gather_facts: true
+  serial: 1
+
+  vars:
+    technitium_config_script_source: "{{ playbook_dir }}/../../../services/technitium/configure-technitium.sh"
+    technitium_config_script_target: /usr/local/sbin/configure-technitium-homelab.sh
+    technitium_admin_password: "{{ lookup('env', 'TECHNITIUM_ADMIN_PASSWORD') | default('', true) }}"
+    technitium_api_token: "{{ lookup('env', 'TECHNITIUM_API_TOKEN') | default('', true) }}"
+    technitium_primary_domain: "{{ lookup('env', 'TECHNITIUM_PRIMARY_DOMAIN') | default(technitium_searchdomain, true) }}"
+    technitium_dev_domain: "{{ lookup('env', 'TECHNITIUM_DEV_DOMAIN') | default('lab.' ~ technitium_searchdomain, true) }}"
+    technitium_tsig_secret: "{{ lookup('env', 'TECHNITIUM_TSIG_SECRET') | default('', true) }}"
+
+  pre_tasks:
+    - name: Fail when neither password nor API token has been provided
+      ansible.builtin.fail:
+        msg: "Set TECHNITIUM_ADMIN_PASSWORD or TECHNITIUM_API_TOKEN before running configuration."
+      when:
+        - technitium_admin_password | length == 0
+        - technitium_api_token | length == 0
+
+  tasks:
+    - name: Copy Technitium homelab configuration script
+      ansible.builtin.copy:
+        src: "{{ technitium_config_script_source }}"
+        dest: "{{ technitium_config_script_target }}"
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Run Technitium homelab configuration
+      ansible.builtin.command: "{{ technitium_config_script_target }}"
+      environment:
+        ROLE: "{{ technitium_role }}"
+        SERVER_IP: "{{ technitium_server_ip }}"
+        PRIMARY_IP: "{{ technitium_primary_ip }}"
+        SECONDARY_IP: "{{ technitium_secondary_ip }}"
+        PRIMARY_DOMAIN: "{{ technitium_primary_domain }}"
+        DEV_DOMAIN: "{{ technitium_dev_domain }}"
+        ADMIN_PASSWORD: "{{ technitium_admin_password }}"
+        API_TOKEN: "{{ technitium_api_token }}"
+        TSIG_SECRET: "{{ technitium_tsig_secret }}"
+      register: technitium_configure_result
+      changed_when: true
+      no_log: true
+
+    - name: Confirm Technitium configuration completed
+      ansible.builtin.debug:
+        msg: "Technitium configuration completed for {{ inventory_hostname }}."
