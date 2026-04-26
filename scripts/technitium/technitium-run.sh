@@ -106,19 +106,6 @@ prompt_default() {
   printf '%s\n' "$answer"
 }
 
-prompt_overwrite() {
-  key_name="$1"
-  prompt_text="$2"
-  default_value="${3-}"
-
-  require_tty "$key_name"
-  answer="$(tty_prompt "${prompt_text} [${default_value}]: ")"
-  answer="${answer:-$default_value}"
-  [ -n "$answer" ] || return 1
-  ensure_env_key_value "$CONFIG_ENV_FILE" "$key_name" "$answer"
-  printf '%s\n' "$answer"
-}
-
 prompt_optional() {
   key_name="$1"
   prompt_text="$2"
@@ -218,7 +205,7 @@ prepare_plan() {
   base_mtu="$(prompt_optional TECHNITIUM_VAR_MTU 'MTU' '')"
   base_vlan="$(prompt_default TECHNITIUM_VAR_VLAN 'VLAN tag' '30')"
   base_mac="$(prompt_default TECHNITIUM_VAR_MAC 'First server MAC address' 'BC:24:11:86:A2:AA')"
-  base_ns="$(prompt_default TECHNITIUM_VAR_NS 'DNS server for container setup' '192.168.20.1')"
+  base_ns="$(prompt_default TECHNITIUM_VAR_NS 'DNS server for container setup' '192.168.30.1')"
   base_ipv6_method="$(prompt_default TECHNITIUM_VAR_IPV6_METHOD 'IPv6 method' 'auto')"
   base_ssh="$(prompt_default TECHNITIUM_VAR_SSH 'Enable SSH? yes/no' 'yes')"
   base_ssh_authorized_key="$(prompt_default TECHNITIUM_VAR_SSH_AUTHORIZED_KEY 'SSH authorised public key' "$(cat "${SSH_PRIVATE_KEY}.pub" 2>/dev/null || true)")"
@@ -282,33 +269,10 @@ prepare_plan() {
   printf '\n]\n' >> "$SERVER_PLAN_FILE"
 
   log_step 'Step 3/5: Run reusable homelab uniqueness checks and update inventory.'
-  while ! validation_output="$("$PYTHON_BIN" "$ROOT_DIR/scripts/proxmox-lxc/proxmox-lxc-inventory.py" \
+  "$PYTHON_BIN" "$ROOT_DIR/scripts/proxmox-lxc/proxmox-lxc-inventory.py" \
     --inventory "$ANSIBLE_INVENTORY_FILE" \
     --servers-json "$SERVER_PLAN_FILE" \
-    --service-group technitium 2>&1)"; do
-    printf '%s\n' "$validation_output" >&2
-    first_error="$(printf '%s\n' "$validation_output" | awk '/^ - / { print; exit }')"
-    case "$first_error" in
-      *'ip already used'*|*'Duplicate requested ip'*)
-        base_net="$(prompt_overwrite TECHNITIUM_VAR_NET 'First server IP/CIDR' '192.168.30.10/24')"
-        ;;
-      *'mac already used'*|*'Duplicate requested mac'*)
-        base_mac="$(prompt_overwrite TECHNITIUM_VAR_MAC 'First server MAC address' 'BC:24:11:86:A2:AA')"
-        ;;
-      *'ctid already used'*|*'Duplicate requested ctid'*)
-        base_ctid="$(prompt_overwrite TECHNITIUM_VAR_CTID 'First server CTID' '21000')"
-        ;;
-      *'hostname already used'*|*'Duplicate requested hostname'*)
-        base_hostname="$(prompt_overwrite TECHNITIUM_VAR_HOSTNAME 'First server hostname' 'dns01')"
-        ;;
-      *)
-        exit 1
-        ;;
-    esac
-    prepare_plan
-    return
-  done
-  printf '%s\n' "$validation_output"
+    --service-group technitium
 
   log_step 'Step 4/5: Technitium plan ready.'
   cat "$SERVER_PLAN_FILE"
