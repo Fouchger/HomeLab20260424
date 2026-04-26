@@ -22,6 +22,7 @@ tasks:
           task ansible:python3
           task ansible:pipx
           task ansible:ansible
+          task ansible:python-deps
           task ansible:collections
           task ansible:inventory:ensure
           task ansible:bootstrap-local
@@ -84,7 +85,6 @@ tasks:
         pipx ensurepath || true
         python3 -m pipx ensurepath || true
 
-        pipx install paramiko
         pipx ensurepath || true
 
     status:
@@ -112,7 +112,7 @@ tasks:
 
         export PATH="${user_local_bin}:${PATH}"
 
-        if pipx list --short 2>/dev/null | grep -qx 'ansible'; then
+        if pipx list 2>/dev/null | grep -q 'package ansible'; then
           echo 'Ansible is already installed in pipx.'
           pipx upgrade ansible || true
         else
@@ -152,7 +152,59 @@ tasks:
         fi
         profile_file="${current_home}/.profile"
         path_line='export PATH="$HOME/.local/bin:$PATH"'
-        pipx list --short 2>/dev/null | grep -qx 'ansible' && grep -Fqx "${path_line}" "${profile_file}"
+        pipx list 2>/dev/null | grep -q 'package ansible' && grep -Fqx "${path_line}" "${profile_file}"
+
+  python-deps:
+    internal: true
+    desc: Install Python packages required inside the Ansible pipx environment
+    deps:
+      - ansible
+    cmds:
+      - |
+        # ================================================================
+        # Task: ansible:python-deps
+        # Purpose:
+        #   Install Python packages that Ansible imports at runtime.
+        # Notes:
+        #   - These packages must be injected into the Ansible pipx venv,
+        #     not installed as separate pipx applications.
+        #   - Paramiko is required when network_cli falls back from
+        #     ansible-pylibssh for RouterOS SSH connections.
+        # ================================================================
+        set -euo pipefail
+        export PATH="${HOME:-/root}/.local/bin:${PATH}"
+
+        if ! command -v pipx >/dev/null 2>&1; then
+          echo 'pipx was not found. Run task ansible:pipx first.' >&2
+          exit 1
+        fi
+
+        if ! pipx list 2>/dev/null | grep -q 'package ansible'; then
+          echo 'Ansible is not installed in pipx. Run task ansible:ansible first.' >&2
+          exit 1
+        fi
+
+        pipx inject ansible paramiko
+
+        ansible_python_cmd="${HOME:-/root}/.local/share/pipx/venvs/ansible/bin/python"
+        if [ ! -x "$ansible_python_cmd" ]; then
+          echo 'Could not find the Ansible pipx Python interpreter.' >&2
+          exit 1
+        fi
+
+        "$ansible_python_cmd" - <<'PYTHON_CHECK'
+        import paramiko
+
+        print(f'paramiko {paramiko.__version__} available in Ansible pipx environment')
+        PYTHON_CHECK
+    status:
+      - |
+        set -euo pipefail
+        ansible_python_cmd="${HOME:-/root}/.local/share/pipx/venvs/ansible/bin/python"
+        [ -x "$ansible_python_cmd" ]
+        "$ansible_python_cmd" - <<'PYTHON_CHECK'
+        import paramiko
+        PYTHON_CHECK
 
   collections:
     internal: true

@@ -1,0 +1,75 @@
+--- taskfile/ansible.Taskfile.yml
++++ taskfile/ansible.Taskfile.yml
+@@ -22,6 +22,7 @@
+           task ansible:python3
+           task ansible:pipx
+           task ansible:ansible
++          task ansible:python-deps
+           task ansible:collections
+           task ansible:inventory:ensure
+           task ansible:bootstrap-local
+@@ -84,7 +85,6 @@
+         pipx ensurepath || true
+         python3 -m pipx ensurepath || true
+ 
+-        pipx install paramiko
+         pipx ensurepath || true
+ 
+     status:
+@@ -154,6 +154,56 @@
+         path_line='export PATH="$HOME/.local/bin:$PATH"'
+         pipx list --short 2>/dev/null | grep -qx 'ansible' && grep -Fqx "${path_line}" "${profile_file}"
+ 
++  python-deps:
++    internal: true
++    desc: Install Python libraries into the Ansible pipx environment
++    deps:
++      - ansible
++    cmds:
++      - |
++        # ================================================================
++        # Task: ansible:python-deps
++        # Purpose:
++        #   Install Python packages required by Ansible modules into the
++        #   existing Ansible pipx virtual environment.
++        # Notes:
++        #   - Do not use `pipx install paramiko`; Paramiko is a library, not
++        #     an application entrypoint.
++        #   - `pipx inject ansible paramiko` makes Paramiko importable by the
++        #     Ansible runtime used by ansible-playbook.
++        # ================================================================
++        set -euo pipefail
++
++        export PATH="${HOME:-/root}/.local/bin:${PATH}"
++
++        if ! command -v pipx >/dev/null 2>&1; then
++          echo 'pipx was not found. Run task ansible:ansible first.' >&2
++          exit 1
++        fi
++
++        ansible_venv_python="${HOME:-/root}/.local/share/pipx/venvs/ansible/bin/python"
++
++        if [ ! -x "$ansible_venv_python" ]; then
++          current_user="${SUDO_USER:-${USER:-$(id -un)}}"
++          current_home="$(getent passwd "$current_user" 2>/dev/null | cut -d: -f6)"
++          if [ -n "$current_home" ] && [ -x "$current_home/.local/share/pipx/venvs/ansible/bin/python" ]; then
++            ansible_venv_python="$current_home/.local/share/pipx/venvs/ansible/bin/python"
++          fi
++        fi
++
++        if [ ! -x "$ansible_venv_python" ]; then
++          echo 'Ansible pipx environment was not found. Run task ansible:ansible first.' >&2
++          exit 1
++        fi
++
++        if "$ansible_venv_python" -c 'import paramiko' >/dev/null 2>&1; then
++          echo 'Paramiko is already available in the Ansible pipx environment.'
++        else
++          pipx inject ansible paramiko
++        fi
++
++        "$ansible_venv_python" -c 'import paramiko; print("paramiko " + paramiko.__version__)'
++
+   collections:
+     internal: true
+     desc: Install or upgrade repository Ansible collections
