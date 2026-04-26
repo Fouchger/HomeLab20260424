@@ -22,27 +22,51 @@ from typing import Any
 
 try:
     import yaml
+    from yaml.composer import ComposerError
 except ImportError as exc:
     print("ERROR: PyYAML is required. Install python3-yaml or run task ansible:python-deps.", file=sys.stderr)
     raise SystemExit(1) from exc
 
 
+def empty_inventory() -> dict[str, Any]:
+    return {"all": {"hosts": {}, "children": {}}}
+
+
+def repair_undefined_alias_hosts(text: str) -> str:
+    # PyYAML can emit anchors when the same host var mapping is reused in more
+    # than one group. If a later manual edit removes the anchor target but leaves
+    # a host alias such as `dns01: *id001`, the inventory becomes unreadable.
+    # Replace only those dangling host-alias rows with an empty mapping so the
+    # requested hosts can be rewritten with full values during this run.
+    return re.sub(r"^(\s{4,}[A-Za-z0-9_.-]+): \*[A-Za-z0-9_-]+\s*$", r"\1: {}", text, flags=re.MULTILINE)
+
+
 def load_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():
-        return {"all": {"hosts": {}, "children": {}}}
-    data = yaml.safe_load(path.read_text())
+        return empty_inventory()
+    raw_text = path.read_text()
+    try:
+        data = yaml.safe_load(raw_text)
+    except ComposerError as exc:
+        if "undefined alias" not in str(exc):
+            raise
+        data = yaml.safe_load(repair_undefined_alias_hosts(raw_text))
     if data is None:
-        return {"all": {"hosts": {}, "children": {}}}
+        return empty_inventory()
     if not isinstance(data, dict):
         raise ValueError(f"Inventory is not a YAML mapping: {path}")
     return data
 
 
+class NoAliasDumper(yaml.SafeDumper):
+    def ignore_aliases(self, data: Any) -> bool:
+        return True
+
 def ensure_inventory_shape(data: dict[str, Any]) -> dict[str, Any]:
     data.setdefault("all", {})
     data["all"].setdefault("hosts", {})
     data["all"].setdefault("children", {})
-    for group_name in ("proxmox_hosts", "lxc", "vm", "technitium"):
+    for group_name in ("proxmox_hosts", "managed", "mikrotik", "vm", "lxc"):
         data["all"]["children"].setdefault(group_name, {"hosts": {}})
         data["all"]["children"][group_name].setdefault("hosts", {})
     return data
@@ -93,7 +117,7 @@ def validate_servers(data: dict[str, Any], servers: list[dict[str, Any]], servic
     errors: list[str] = []
     seen: dict[str, set[str]] = {"hostname": set(), "ip": set(), "mac": set(), "ctid": set()}
     existing = collect_existing(data)
-    service_hosts = data["all"]["children"].setdefault(service_group, {"hosts": {}}).setdefault("hosts", {})
+    lxc_hosts = data["all"]["children"].setdefault("lxc", {"hosts": {}}).setdefault("hosts", {})
 
     for server in servers:
         hostname = str(server["hostname"])
@@ -109,7 +133,7 @@ def validate_servers(data: dict[str, Any], servers: list[dict[str, Any]], servic
                 errors.append(f"Duplicate requested {key}: {value}")
             seen[key].add(value)
             owner = existing[key].get(value)
-            if owner and owner not in service_hosts and owner != hostname:
+            if owner and owner not in lxc_hosts and owner != hostname:
                 errors.append(f"{key} already used by {owner}: {value}")
 
     if errors:
@@ -123,7 +147,8 @@ def update_inventory(inventory_path: Path, servers: list[dict[str, Any]], servic
     data = ensure_inventory_shape(load_yaml(inventory_path))
     validate_servers(data, servers, service_group)
     lxc_hosts = data["all"]["children"]["lxc"]["hosts"]
-    service_hosts = data["all"]["children"].setdefault(service_group, {"hosts": {}}).setdefault("hosts", {})
+    if service_group not in {"proxmox_hosts", "managed", "mikrotik", "vm", "lxc"}:
+        data["all"]["children"].pop(service_group, None)
 
     for server in servers:
         hostname = str(server["hostname"])
@@ -140,11 +165,10 @@ def update_inventory(inventory_path: Path, servers: list[dict[str, Any]], servic
             "technitium_secondary_ip": server.get("secondary_ip", ""),
             "technitium_searchdomain": server.get("searchdomain", ""),
         }
-        lxc_hosts[hostname] = host_vars
-        service_hosts[hostname] = host_vars
+        lxc_hosts[hostname] = dict(host_vars)
 
     inventory_path.parent.mkdir(parents=True, exist_ok=True)
-    inventory_path.write_text(yaml.safe_dump(data, sort_keys=False, explicit_start=True))
+    inventory_path.write_text(yaml.dump(data, Dumper=NoAliasDumper, sort_keys=False, explicit_start=True))
     print(f"Inventory updated: {inventory_path}")
 
 
