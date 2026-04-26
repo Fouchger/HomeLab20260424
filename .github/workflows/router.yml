@@ -1,0 +1,95 @@
+# ==============================================================================
+# File: .github/workflows/router.yml
+# Purpose:
+#   GitOps workflow for MikroTik router desired-state validation and controlled apply.
+# Notes:
+#   - Pushes validate the code only.
+#   - Router plan/apply run on a self-hosted runner with repository secrets.
+#   - Apply is protected by the homelab-router GitHub Environment.
+# ============================================================================== 
+
+name: Router desired state
+
+on:
+  push:
+    paths:
+      - 'ansible/roles/mikrotik_router/**'
+      - 'ansible/playbooks/router/**'
+      - 'scripts/router/**'
+      - 'services/router/**'
+      - 'taskfile/router.Taskfile.yml'
+      - 'terraform/modules/mikrotik-router/**'
+      - 'terraform/environments/homelab/**'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode: render, plan, or apply'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - render
+          - plan
+          - apply
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Task
+        uses: arduino/setup-task@v2
+
+      - name: Install Ansible runtime
+        run: |
+          python3 -m pip install --user pipx
+          python3 -m pipx ensurepath
+          export PATH="$HOME/.local/bin:$PATH"
+          pipx install --include-deps ansible
+          ansible-galaxy collection install -r ansible/collections/requirements.yml
+
+      - name: Syntax check router playbook
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          ansible-playbook ansible/playbooks/router/apply.yml --syntax-check
+
+      - name: Validate shell scripts
+        run: |
+          bash -n scripts/router/mikrotik-run.sh
+
+  router-operation:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: self-hosted
+    environment: homelab-router
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Task
+        uses: arduino/setup-task@v2
+
+      - name: Run selected router operation
+        env:
+          MIKROTIK_HOST: ${{ secrets.MIKROTIK_HOST }}
+          MIKROTIK_USER: ${{ secrets.MIKROTIK_USER }}
+          MIKROTIK_PASSWORD: ${{ secrets.MIKROTIK_PASSWORD }}
+          MIKROTIK_NAME: ${{ vars.MIKROTIK_NAME || 'hap-ax2' }}
+          MIKROTIK_PORT: ${{ vars.MIKROTIK_PORT || '22' }}
+          MIKROTIK_HOST_KEY_CHECKING: ${{ vars.MIKROTIK_HOST_KEY_CHECKING || 'false' }}
+          MIKROTIK_COMMAND_TIMEOUT: ${{ vars.MIKROTIK_COMMAND_TIMEOUT || '120' }}
+          MIKROTIK_ROUTERS: ${{ vars.MIKROTIK_ROUTERS || vars.MIKROTIK_NAME || 'hap-ax2' }}
+          MIKROTIK_SAFE_MODE: ${{ vars.MIKROTIK_SAFE_MODE || 'false' }}
+          MIKROTIK_AUTO_ROLLBACK_ON_FAILURE: ${{ vars.MIKROTIK_AUTO_ROLLBACK_ON_FAILURE || 'true' }}
+          MIKROTIK_APPLY_SERIAL: ${{ vars.MIKROTIK_APPLY_SERIAL || '1' }}
+          MIKROTIK_ROUTER_IDENTITY: ${{ vars.MIKROTIK_ROUTER_IDENTITY || 'RTR-MAIN' }}
+          MIKROTIK_ROUTER_ADMIN_PASSWORD: ${{ secrets.MIKROTIK_ROUTER_ADMIN_PASSWORD }}
+          MIKROTIK_WIFI_USERS_PASSPHRASE: ${{ secrets.MIKROTIK_WIFI_USERS_PASSPHRASE }}
+          MIKROTIK_WIFI_MGMT_PASSPHRASE: ${{ secrets.MIKROTIK_WIFI_MGMT_PASSPHRASE }}
+          MIKROTIK_WIFI_IOT_PASSPHRASE: ${{ secrets.MIKROTIK_WIFI_IOT_PASSPHRASE }}
+          MIKROTIK_WIFI_GUEST_PASSPHRASE: ${{ secrets.MIKROTIK_WIFI_GUEST_PASSPHRASE }}
+          ROUTER_APPLY_CONFIRM: ${{ github.event.inputs.mode == 'apply' && 'APPLY_ALL' || '' }}
+        run: |
+          task router:${{ github.event.inputs.mode }}

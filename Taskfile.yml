@@ -82,43 +82,50 @@ tasks:
         0. Install or update the repository
             ./install.sh            → Clones or updates the repo and prepares the local environment
 
-        0.1. Install Code-Server
+        1. Install Code-Server
             task proxmox_scripts:code-server:install → Install Coder code-server on admin01 using latest upstream or fixed local helper script
 
-        1. View available commands
+        2. View available commands
             task help               → Displays this guide and available workflows
 
-        2. Check prerequisites and environment readiness
+        3. Check prerequisites and environment readiness
             task doctor             → Validates OS, required tools, and config/secrets presence
 
-        3. Bootstrap local environment
+        4. Bootstrap local environment
             task bootstrap          → Creates state folders, initial config, installs Ansible, fixes permissions
 
-        4. Initialise configuration (non-secret values)
+        5. Initialise configuration (non-secret values)
             task config:init        → Create State folder and subfolders
                                     → Prompts once for required config and stores in state/config/.env
 
-        5. Initialise and store secrets
+        6. Initialise and store secrets
             task secrets:design     → Defines required secrets structure
             task secrets:prepare    → Creates local secret storage files
             task secrets:bootstrap  → Prompts once for secrets and stores securely
             task secrets:report     → Shows secret status (without exposing values)
 
-        6. Configure SSH access
+        7. Configure SSH access
             task ssh:bootstrap      → Generates SSH keys and configures access to remote hosts (e.g. Proxmox)
 
-        7. Configure Git and GitHub access
+        8. Configure Git and GitHub access
           task git_gh:bootstrap     → Authenticates GitHub CLI and prepares repo access
 
-        8. Configure Proxmox automation
+        9. Configure Proxmox automation
           task proxmox:bootstrap    → Creates automation user, API token, and discovers nodes
 
-        9. Validate repository and configuration
+        10. Validate repository and configuration
             task validate           → Checks structure, shell syntax, and required files
 
-        10. Verify Ansible connectivity (after hosts exist)
+        11. Verify Ansible connectivity (after hosts exist)
             task ansible:syntax     → Validates Ansible playbooks
             task ansible:ping       → Confirms connectivity to managed hosts
+
+        12. Mikrotik hap ax2 configuration (RUN MANUALLY)
+            task router:backup      -> Back up a MikroTik RouterOS export
+            task router:render      -> Render desired RouterOS install script only
+            task router:plan        -> Render and diff against live RouterOS export
+            task router:apply       -> Apply complete managed RouterOS configuration
+
 
         ──────────────────────────────────────────────────────────────
         Day-to-day operations (regular use)
@@ -363,4 +370,5 @@ tasks:
       - task: validate
       - task: ansible:syntax 
       - task: ansible:ping
+      
       

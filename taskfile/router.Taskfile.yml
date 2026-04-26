@@ -32,27 +32,51 @@ tasks:
           task router:help
           task router:deps        -> Install RouterOS Ansible runtime dependencies
           task router:backup      -> Back up a MikroTik RouterOS export
+          task router:render      -> Render desired RouterOS install script only
+          task router:plan        -> Render and diff against live RouterOS export
+          task router:apply       -> Apply complete managed RouterOS configuration
           task router:report      -> Show router-domain status
 
         MikroTik backup example:
           task router:backup
 
+        MikroTik desired-state examples:
+          task router:render      # creates sensitive and redacted generated scripts
+          task router:plan        # exports live router and writes redacted + sensitive diffs
+          task router:apply       # plans first, then requires typing APPLY <router-name> before import
+
+        Multi-router example:
+          MIKROTIK_ROUTERS=hap-ax2,lab-rtr task router:plan
+          MIKROTIK_ROUTERS=hap-ax2,lab-rtr task router:apply
+
+        Per-router variables use the router name uppercased with punctuation changed to underscores:
+          MIKROTIK_HAP_AX2_HOST=192.168.20.1
+          MIKROTIK_HAP_AX2_ROUTER_IDENTITY=RTR-MAIN
+
+
         The task prompts for missing values and saves them for future use:
           - state/config/.env stores MIKROTIK_HOST, MIKROTIK_USER, MIKROTIK_NAME,
             MIKROTIK_PORT, MIKROTIK_HOST_KEY_CHECKING, and MIKROTIK_COMMAND_TIMEOUT.
-          - state/secrets/passwords/passwords.enc.env stores MIKROTIK_PASSWORD.
+          - state/secrets/passwords/passwords.enc.env stores MIKROTIK_PASSWORD,
+            common or per-router SSH/admin/WiFi secrets.
 
         Environment variables still override saved values for one-off runs.
+        For protected automation only, ROUTER_APPLY_CONFIRM=APPLY_ALL bypasses per-host prompts.
 
         Backup output:
           state/mikrotik/YYYYMMDD-HHMM/<router-name>.rsc
+
+        Desired-state output:
+          state/mikrotik/generated/YYYYMMDD-HHMMSS/<router-name>-install.rsc
+          state/mikrotik/generated/YYYYMMDD-HHMMSS/<router-name>-install.redacted.rsc
+          state/mikrotik/generated/YYYYMMDD-HHMMSS/<router-name>-diff.redacted.patch
         HELP
 
   deps:
     desc: Install RouterOS Ansible runtime dependencies
     cmds:
       - task: :ansible:python-deps
-      - task: :ansible:collections
+      # - task: :ansible:collections
 
   backup:
     desc: Back up MikroTik RouterOS configuration including sensitive values
@@ -193,6 +217,63 @@ tasks:
 
         echo 'Step 5/5: MikroTik backup completed.'
         echo "MikroTik backup folder: {{.MIKROTIK_DIR}}/$backup_stamp"
+
+  render:
+    desc: Render MikroTik RouterOS desired-state install script without connecting for diff
+    deps:
+      - :dirs:ensure
+      - :ansible:python-deps
+      # - :ansible:collections
+    cmds:
+      - |
+        set -euo pipefail
+        ROOT_DIR='{{.ROOT_DIR}}' \
+        CONFIG_ENV_FILE='{{.CONFIG_ENV_FILE}}' \
+        PASSWORDS_ENC_ENV_FILE='{{.PASSWORDS_ENC_ENV_FILE}}' \
+        PASSWORDS_ENC_ENV_FILE_REL='{{.PASSWORDS_ENC_ENV_FILE_REL}}' \
+        AGE_KEYS_FILE='{{.AGE_KEYS_FILE}}' \
+        TMP_DIR='{{.TMP_DIR}}' \
+        MIKROTIK_DIR='{{.MIKROTIK_DIR}}' \
+        TASK_HELPERS_FILE='{{.TASK_HELPERS_FILE}}' \
+          '{{.ROOT_DIR}}/scripts/router/mikrotik-run.sh' render
+
+  plan:
+    desc: Render MikroTik config and compare it with the live RouterOS export
+    deps:
+      - :dirs:ensure
+      - :ansible:python-deps
+      # - :ansible:collections
+    cmds:
+      - |
+        set -euo pipefail
+        ROOT_DIR='{{.ROOT_DIR}}' \
+        CONFIG_ENV_FILE='{{.CONFIG_ENV_FILE}}' \
+        PASSWORDS_ENC_ENV_FILE='{{.PASSWORDS_ENC_ENV_FILE}}' \
+        PASSWORDS_ENC_ENV_FILE_REL='{{.PASSWORDS_ENC_ENV_FILE_REL}}' \
+        AGE_KEYS_FILE='{{.AGE_KEYS_FILE}}' \
+        TMP_DIR='{{.TMP_DIR}}' \
+        MIKROTIK_DIR='{{.MIKROTIK_DIR}}' \
+        TASK_HELPERS_FILE='{{.TASK_HELPERS_FILE}}' \
+          '{{.ROOT_DIR}}/scripts/router/mikrotik-run.sh' plan
+
+  apply:
+    desc: Apply complete MikroTik RouterOS desired state after post-plan confirmation
+    deps:
+      - :dirs:ensure
+      - :ansible:python-deps
+      # - :ansible:collections
+    cmds:
+      - |
+        set -euo pipefail
+        ROOT_DIR='{{.ROOT_DIR}}' \
+        CONFIG_ENV_FILE='{{.CONFIG_ENV_FILE}}' \
+        PASSWORDS_ENC_ENV_FILE='{{.PASSWORDS_ENC_ENV_FILE}}' \
+        PASSWORDS_ENC_ENV_FILE_REL='{{.PASSWORDS_ENC_ENV_FILE_REL}}' \
+        AGE_KEYS_FILE='{{.AGE_KEYS_FILE}}' \
+        TMP_DIR='{{.TMP_DIR}}' \
+        MIKROTIK_DIR='{{.MIKROTIK_DIR}}' \
+        TASK_HELPERS_FILE='{{.TASK_HELPERS_FILE}}' \
+          '{{.ROOT_DIR}}/scripts/router/mikrotik-run.sh' apply
 
   report:
     desc: Show router domain status

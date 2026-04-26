@@ -29,6 +29,7 @@ state/secrets/age/admin.pub
 state/secrets/age/keys.txt
 state/secrets/age/recovery.pub
 state/secrets/sops/examples/bootstrap.enc.yaml
+HomeLab20260424/state/mikrotik/
 
 # Terraform
 .terraform/
@@ -59,4 +60,18 @@ packer_cache/
 *.out
 coverage.*
 
+# sops
 .sops.yaml
+
+# Patch leftovers
+*.orig
+*.rej
+*.patch
+*.diff
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Ansible Galaxy installed collections
+ansible/collections/ansible_collections/
