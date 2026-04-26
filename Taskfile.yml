@@ -14,7 +14,6 @@ silent: true
 
 dotenv:
   - state/config/.env
-  - state/secrets/passwords.env
 
 vars:
   ROOT_DIR:
@@ -38,8 +37,8 @@ vars:
   SSH_KNOWN_HOSTS_FILE: '{{.SSH_KEY_DIR}}/known_hosts'
   KEY_NAME: '{{.KEY_NAME | default "homelab_ed25519"}}'
   ANSIBLE_INVENTORY_FILE: '{{.ROOT_DIR}}/state/ansible/inventory.yml'
-  SSH_PRIVATE_KEY: '{{.HOME}}/.ssh/homelab_ed25519'
-  SSH_PUBLIC_KEY: '{{.HOME}}/.ssh/homelab_ed25519.pub'
+  SSH_PRIVATE_KEY: '{{.SSH_KEY_DIR}}/{{.KEY_NAME}}'
+  SSH_PUBLIC_KEY: '{{.SSH_KEY_DIR}}/{{.KEY_NAME}}.pub'
 
 
 includes:
@@ -74,7 +73,7 @@ tasks:
 
         The repo is operated through Task after install.sh has cloned or updated it.
         Run tasks from the repository root. Existing values in state/config/.env
-        and state/secrets/passwords.env are reused on rerun.
+        and state/secrets/passwords/passwords.enc.env are reused on rerun.
 
         ──────────────────────────────────────────────────────────────
         Day 1 – Initial implementation (run in order)
@@ -229,19 +228,18 @@ tasks:
       - |
         set -euo pipefail
 
-        mkdir -p state/config state/secrets/password state/ansible state/terraform
+        mkdir -p '{{.CONFIG_DIR}}' '{{.PASSWORDS_DIR}}' '{{.ROOT_DIR}}/state/ansible' '{{.ROOT_DIR}}/state/terraform'
         
 
-        CONFIG_FILE="state/config/.env"
-        SECRETS_FILE="state/secrets/password/passwords.enc.env"
-        INVENTORY_FILE="state/ansible/inventory.yml"
+        CONFIG_FILE='{{.CONFIG_ENV_FILE}}'
+        PASSWORDS_ENC_FILE='{{.PASSWORDS_ENC_ENV_FILE}}'
+        INVENTORY_FILE='{{.ANSIBLE_INVENTORY_FILE}}'
 
         touch "${CONFIG_FILE}"
         chmod 600 "${CONFIG_FILE}"
 
-        if [ ! -f "${SECRETS_FILE}" ]; then
-          touch "${SECRETS_FILE}"
-          chmod 600 "${SECRETS_FILE}"
+        if [ ! -f "${PASSWORDS_ENC_FILE}" ]; then
+          install -m 0600 /dev/null "${PASSWORDS_ENC_FILE}"
         fi
 
         ensure_config_value() {
@@ -305,7 +303,7 @@ tasks:
         echo
         echo "Config initialisation complete."
         echo "Config file: ${CONFIG_FILE}"
-        echo "Secrets file: ${SECRETS_FILE}"
+        echo "Secrets file: ${PASSWORDS_ENC_FILE}"
 
   bootstrap:
     desc: Prepare local folders, config, Ansible basics and executable permissions
@@ -344,7 +342,7 @@ tasks:
           fi
         done
         test -f '{{.CONFIG_ENV_FILE}}' && echo '  OK   state/config/.env' || echo '  MISS state/config/.env'
-        test -f '{{.SECRETS_DIR}}/passwords.env' && echo '  OK   state/secrets/passwords.env' || echo '  MISS state/secrets/passwords.env'
+        test -f '{{.PASSWORDS_ENC_ENV_FILE}}' && echo '  OK   state/secrets/passwords/passwords.enc.env' || echo '  MISS state/secrets/passwords/passwords.enc.env'
 
   report:
     desc: Show repository runtime paths
@@ -354,7 +352,7 @@ tasks:
         Repository report
           ROOT_DIR:        {{.ROOT_DIR}}
           CONFIG_ENV_FILE: {{.CONFIG_ENV_FILE}}
-          PASSWORDS_FILE:  {{.SECRETS_DIR}}/passwords.env
+          PASSWORDS_ENC_ENV_FILE: {{.PASSWORDS_ENC_ENV_FILE}}
           INVENTORY_FILE:  {{.ANSIBLE_INVENTORY_FILE}}
         EOF
 

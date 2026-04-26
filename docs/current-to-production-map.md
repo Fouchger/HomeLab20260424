@@ -67,7 +67,7 @@ The `.git` folder was not treated as application functionality.
 ## Important rebuild decisions
 
 - No live `.env` or `passwords.env` is committed. Example files are committed instead.
-- User-provided values are stored once in `state/config/.env` or `state/secrets/passwords.env` and then reused.
+- User-provided values are stored once in `state/config/.env` or `state/secrets/passwords/passwords.enc.env` and then reused.
 - Tasks should prompt only when required values are missing or empty.
 - Ansible is introduced for repeatable local bootstrap while Task remains the main operator entrypoint.
 - Existing large domain Taskfiles are preserved to avoid functionality loss.

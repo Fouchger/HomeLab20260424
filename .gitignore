@@ -9,9 +9,9 @@
 *.env
 !*.env.example
 state/config/.env
-state/secrets/passwords.env
+state/secrets/passwords/passwords.enc.env
 state/secrets/passwords/*.env
-!state/secrets/passwords.env.example
+!state/secrets/passwords/passwords.example.env
 
 # Generated state
 state/

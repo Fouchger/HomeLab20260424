@@ -25,7 +25,7 @@ task ansible:python-deps
 task ansible:collections
 ```
 
-`task router:deps` remains available as a router-domain alias.
+`task router:deps` remains available as the router-domain dependency task.
 
 ## First backup
 

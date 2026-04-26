@@ -36,7 +36,7 @@ The root Taskfile defines shared variables once and includes domain Taskfiles un
 Real runtime files are intentionally ignored by Git:
 
 - `state/config/.env`
-- `state/secrets/passwords.env`
+- `state/secrets/passwords/passwords.enc.env`
 - `state/ansible/inventory.yml`
 - Terraform state files
 - OpenBao runtime/bootstrap material
@@ -44,7 +44,7 @@ Real runtime files are intentionally ignored by Git:
 Examples are committed so the repo can be rebuilt safely:
 
 - `state/config/.env.example`
-- `state/secrets/passwords.env.example`
+- `state/secrets/passwords/passwords.example.env`
 - `templates/inventory.yml.tpl`
 
 ## First commands
